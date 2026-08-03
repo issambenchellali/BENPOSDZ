@@ -36,7 +36,14 @@ jobs:
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: نشر التطبيق الرئيسي (BENPOSDZ)
-        run: dotnet publish BENPOSDZ/BENPOSDZ.csproj -c Release -f net8.0-windows10.0.19041.0 -r win-x64 --self-contained true -p:PublishSingleFile=true -p:WindowsPackageType=None -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }} -p:ApplicationVersion=1
+        shell: pwsh
+        run: |
+          dotnet publish BENPOSDZ/BENPOSDZ.csproj -c Release -f net8.0-windows10.0.19041.0 -r win-x64 --self-contained true -p:PublishSingleFile=true -p:WindowsPackageType=None -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }} -p:ApplicationVersion=1 --nologo 2>&1 | Tee-Object -FilePath win_publish.log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = (Get-Content win_publish.log -Tail 60) -join "`n"
+            Write-Host "::error title=Windows publish failed::$tail"
+            exit $LASTEXITCODE
+          }
 
       - name: نشر أداة التحديث (BENPOSUpdater)
         run: dotnet publish BENPOSUpdater/BENPOSUpdater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o release/updater
@@ -110,7 +117,14 @@ jobs:
           }
 
       - name: بناء APK أندرويد
-        run: dotnet publish BENPOSDZ/BENPOSDZ.csproj -f net8.0-android -c Release -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }} -p:ApplicationVersion=${{ steps.version.outputs.versionCode }} --nologo -v q
+        shell: pwsh
+        run: |
+          dotnet publish BENPOSDZ/BENPOSDZ.csproj -f net8.0-android -c Release -p:ApplicationDisplayVersion=${{ steps.version.outputs.version }} -p:ApplicationVersion=${{ steps.version.outputs.versionCode }} --nologo 2>&1 | Tee-Object -FilePath android_publish.log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = (Get-Content android_publish.log -Tail 60) -join "`n"
+            Write-Host "::error title=Android publish failed::$tail"
+            exit $LASTEXITCODE
+          }
 
       - name: رفع APK إلى GitHub Release
         uses: softprops/action-gh-release@v2
