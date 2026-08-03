@@ -81,14 +81,14 @@ namespace BENPOSDZ.Services
             private readonly Android.App.Activity _activity;
             public PrintWebViewClient(Android.App.Activity activity) => _activity = activity;
 
-            public override void OnPageFinished(Android.Webkit.WebView view, string? url)
+            public override void OnPageFinished(Android.Webkit.WebView? view, string? url)
             {
                 base.OnPageFinished(view, url);
                 try
                 {
-                    var printManager = (Android.Print.PrintManager)_activity.GetSystemService(Android.Content.Context.PrintService);
-                    var adapter = view.CreatePrintDocumentAdapter("BENPOSDZ");
-                    printManager.Print("BENPOSDZ", adapter, new Android.Print.PrintAttributes.Builder().Build());
+                    var printManager = (Android.Print.PrintManager)_activity.GetSystemService(Android.Content.Context.PrintService)!;
+                    var adapter = view!.CreatePrintDocumentAdapter("BENPOSDZ");
+                    printManager.Print("BENPOSDZ", adapter, new Android.Print.PrintAttributes.Builder().Build()!);
                 }
                 catch { }
             }

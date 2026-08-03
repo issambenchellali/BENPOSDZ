@@ -121,7 +121,7 @@ namespace BENPOSDZ.Services
         private static Javax.Crypto.Cipher GetCipher(bool encrypt)
         {
             var ks = Java.Security.KeyStore.GetInstance("AndroidKeyStore");
-            ks.Load(null);
+            ks!.Load(null);
             var key = ks.GetKey(KeyAlias, null);
             if (key == null)
             {
@@ -132,23 +132,23 @@ namespace BENPOSDZ.Services
                     .SetBlockModes(Android.Security.Keystore.KeyProperties.BlockModeGcm)
                     .SetEncryptionPaddings(Android.Security.Keystore.KeyProperties.EncryptionPaddingNone)
                     .Build();
-                kg.Init(spec);
+                kg!.Init(spec);
                 kg.GenerateKey();
                 key = ks.GetKey(KeyAlias, null);
             }
-            var cipher = Javax.Crypto.Cipher.GetInstance("AES/GCM/NoPadding");
+            var cipher = Javax.Crypto.Cipher.GetInstance("AES/GCM/NoPadding")!;
             if (encrypt)
-                cipher.Init(Javax.Crypto.CipherMode.EncryptMode, key);
+                cipher.Init(Javax.Crypto.CipherMode.EncryptMode, key!);
             else
-                cipher.Init(Javax.Crypto.CipherMode.DecryptMode, key);
+                cipher.Init(Javax.Crypto.CipherMode.DecryptMode, key!);
             return cipher;
         }
 
         private static string AndroidEncrypt(string plain)
         {
             var cipher = GetCipher(true);
-            var iv = cipher.GetIV();
-            var ct = cipher.DoFinal(Encoding.UTF8.GetBytes(plain));
+            var iv = cipher.GetIV()!;
+            var ct = cipher.DoFinal(Encoding.UTF8.GetBytes(plain))!;
             var all = new byte[iv.Length + ct.Length];
             Buffer.BlockCopy(iv, 0, all, 0, iv.Length);
             Buffer.BlockCopy(ct, 0, all, iv.Length, ct.Length);
@@ -165,11 +165,11 @@ namespace BENPOSDZ.Services
             Buffer.BlockCopy(all, ivLen, ct, 0, ct.Length);
 
             var ks = Java.Security.KeyStore.GetInstance("AndroidKeyStore");
-            ks.Load(null);
+            ks!.Load(null);
             var key = ks.GetKey(KeyAlias, null);
-            var cipher = Javax.Crypto.Cipher.GetInstance("AES/GCM/NoPadding");
-            cipher.Init(Javax.Crypto.CipherMode.DecryptMode, key, new Javax.Crypto.Spec.GCMParameterSpec(128, iv));
-            return Encoding.UTF8.GetString(cipher.DoFinal(ct));
+            var cipher = Javax.Crypto.Cipher.GetInstance("AES/GCM/NoPadding")!;
+            cipher.Init(Javax.Crypto.CipherMode.DecryptMode, key!, new Javax.Crypto.Spec.GCMParameterSpec(128, iv));
+            return Encoding.UTF8.GetString(cipher.DoFinal(ct)!);
         }
 #endif
     }

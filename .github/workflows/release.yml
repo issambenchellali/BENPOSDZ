@@ -105,8 +105,6 @@ jobs:
 
       - name: تثبيت Android SDK (مع قبول التراخيص)
         uses: android-actions/setup-android@v3
-        with:
-          sdk-packages: 'platform-tools, platforms;android-34, build-tools;34.0.0, ndk;26.1.10909125'
 
       - name: تحديد الإصدار
         id: version
