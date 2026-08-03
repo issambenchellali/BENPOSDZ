@@ -100,7 +100,7 @@ namespace BENPOSDZ.Services
         {
 #if ANDROID
             // على أندرويد التحديث عبر المتجر — لا يوجد نظام تحديث مدمج
-            return false;
+            return await Task.FromResult(false);
 #else
             if (IsBusy) return false;
             PendingUpdate = null;
@@ -132,7 +132,8 @@ namespace BENPOSDZ.Services
         public async Task DownloadAndInstallAsync(VersionInfo info, IProgress<(long Done, long Total)>? progress, CancellationToken ct = default)
         {
 #if ANDROID
-            throw new PlatformNotSupportedException("التحديث المدمج غير مدعوم على أندرويد — استخدم المتجر.");
+            await Task.FromException(new PlatformNotSupportedException("التحديث المدمج غير مدعوم على أندرويد — استخدم المتجر."));
+            return;
 #else
             if (IsBusy) throw new InvalidOperationException("عملية تحديث قيد التنفيذ.");
             IsBusy = true;

@@ -72,7 +72,7 @@ namespace BENPOSDZ.Services
             string raw;
 #if ANDROID
             // بصمة مركّبة: ANDROID_ID + العلامة + الطراز (لا تتغير بإعادة التثبيت)
-            string androidId = Android.Provider.Settings.Secure.GetString(
+            string? androidId = Android.Provider.Settings.Secure.GetString(
                 Android.App.Application.Context.ContentResolver,
                 Android.Provider.Settings.Secure.AndroidId);
             raw = $"{(androidId ?? "?")}|{Android.OS.Build.Brand}|{Android.OS.Build.Model}";
