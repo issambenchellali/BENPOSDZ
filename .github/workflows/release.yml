@@ -25,6 +25,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: تثبيت عمل Maui Windows
+        run: dotnet workload install maui-windows
+
       - name: تحديد الإصدار
         id: version
         shell: pwsh
