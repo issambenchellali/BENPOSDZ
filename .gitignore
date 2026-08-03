@@ -11,6 +11,7 @@ keys/
 
 # إصدارات محلية
 releases/
+release/
 *.zip
 
 # IDE
