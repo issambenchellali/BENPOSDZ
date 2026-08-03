@@ -25,13 +25,13 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: تثبيت عمل Maui Windows
+      - name: تثبيت عمل Maui (Windows + Android)
         shell: pwsh
         run: |
-          dotnet workload install maui-windows
+          dotnet workload install maui-android maui-windows
           if ($LASTEXITCODE -ne 0) {
             Start-Sleep -Seconds 15
-            dotnet workload install maui-windows
+            dotnet workload install maui-android maui-windows
           }
 
       - name: تحديد الإصدار
@@ -88,13 +88,13 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: تثبيت عمل Maui Android
+      - name: تثبيت عمل Maui (Android + Windows)
         shell: pwsh
         run: |
-          dotnet workload install maui-android
+          dotnet workload install maui-android maui-windows
           if ($LASTEXITCODE -ne 0) {
             Start-Sleep -Seconds 15
-            dotnet workload install maui-android
+            dotnet workload install maui-android maui-windows
           }
 
       - name: تثبيت JDK 17
