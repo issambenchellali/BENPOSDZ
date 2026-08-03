@@ -1,0 +1,176 @@
+@page "/users"
+@using BENPOSDZ.Services
+@using Dapper
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject SecurityService securityService
+
+<h2>إدارة المستخدمين</h2>
+<button class="btn-add" @onclick="OpenAddModal">+ إضافة مستخدم</button>
+
+<table class="products-table">
+    <thead>
+        <tr>
+            <th>الاسم الكامل</th>
+            <th>اسم المستخدم</th>
+            <th>الصلاحية</th>
+            <th>إجراءات</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var u in usersList)
+        {
+            <tr>
+                <td>@u.User_FullName</td>
+                <td>@u.User_Name</td>
+                <td>@(u.User_Type == 1 ? "مدير" : "بائع")</td>
+                <td>
+                    <button class="btn-edit" @onclick="() => EditUser(u)">تعديل</button>
+                    @if (u.User_Name != "admin") // منع حذف الأدمن الأساسي
+                    {
+                        <button class="btn-delete" @onclick="() => DeleteUser(u.Id)">حذف</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (showModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 450px;">
+            <h3>@(isEditing ? "تعديل مستخدم" : "إضافة مستخدم")</h3>
+            <div class="form-group">
+                <label>الاسم الكامل</label>
+                <input type="text" @bind="newUser.User_FullName" />
+            </div>
+            <div class="form-group">
+                <label>اسم الدخول</label>
+                <input type="text" @bind="newUser.User_Name" />
+            </div>
+            <div class="form-group">
+                <label>كلمة المرور</label>
+                <input type="text" @bind="newUser.User_Password" />
+            </div>
+            <div class="form-group">
+                <label>الصلاحية</label>
+                <select @bind="newUser.User_Type">
+                    <option value="1">مدير (Admin)</option>
+                    <option value="0">بائع (Vendeur)</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="SaveUser">حفظ</button>
+                <button class="btn-cancel" @onclick="() => showModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .btn-add { background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; margin-bottom: 20px; }
+    .products-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    .products-table th { background: #007bff; color: white; padding: 12px; text-align: right; }
+    .products-table td { padding: 12px; border-bottom: 1px solid #eee; }
+    .btn-edit { background: #ffc107; color: black; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    .btn-delete { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+    .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .form-group { display: flex; flex-direction: column; margin-bottom: 10px; }
+    .form-group label { font-weight: bold; margin-bottom: 5px; }
+    .form-group input, .form-group select { padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 15px; }
+    .btn-save { background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+</style>
+
+@code {
+    [Inject] NavigationManager Nav { get; set; } = null!;
+    [Inject] AuthService authService { get; set; } = null!;
+
+    private IEnumerable<UserModel> usersList = new List<UserModel>();
+    private bool showModal = false;
+    private bool isEditing = false;
+    private UserModel newUser = new UserModel();
+
+    protected override void OnInitialized()
+    {
+		if (!authService.IsLicensed) { Nav.NavigateTo("/pos"); return; }
+        if (!authService.IsAdmin)
+        {
+            Nav.NavigateTo("/pos");
+            return;
+        }
+        LoadUsers();
+    }
+
+    private void LoadUsers()
+    {
+        using var connection = dbService.CreateConnection();
+        usersList = connection.Query<UserModel>("SELECT * FROM Users WHERE IsDeleted = 0");
+    }
+
+    private void OpenAddModal()
+    {
+        isEditing = false;
+        newUser = new UserModel();
+        showModal = true;
+    }
+
+    private void EditUser(UserModel u)
+    {
+        isEditing = true;
+        // تفريغ حقل كلمة المرور عند فتح نافذة التعديل
+        newUser = new UserModel { Id = u.Id, User_FullName = u.User_FullName, User_Name = u.User_Name, User_Password = "", User_Type = u.User_Type };
+        showModal = true;
+    }
+
+    private async Task SaveUser()
+    {
+        using var connection = dbService.CreateConnection();
+        
+        if (isEditing)
+        {
+            if (string.IsNullOrWhiteSpace(newUser.User_Password))
+            {
+                // حفظ بدون تغيير كلمة المرور
+                await connection.ExecuteAsync("UPDATE Users SET User_FullName=@User_FullName, User_Name=@User_Name, User_Type=@User_Type WHERE Id=@Id", newUser);
+            }
+            else
+            {
+                // تشفير كلمة المرور الجديدة وحفظها
+                string hashedPassword = securityService.HashPassword(newUser.User_Password);
+                await connection.ExecuteAsync("UPDATE Users SET User_FullName=@User_FullName, User_Name=@User_Name, User_Password=@Pass, User_Type=@User_Type WHERE Id=@Id", 
+                    new { newUser.User_FullName, newUser.User_Name, Pass = hashedPassword, newUser.User_Type, newUser.Id });
+            }
+        }
+        else
+        {
+            newUser.Id = Guid.NewGuid().ToString();
+            string hashedPassword = securityService.HashPassword(newUser.User_Password);
+            await connection.ExecuteAsync("INSERT INTO Users (Id, User_FullName, User_Name, User_Password, User_Type, UpdatedAt) VALUES (@Id, @User_FullName, @User_Name, @Pass, @User_Type, @Date)", 
+                new { newUser.Id, newUser.User_FullName, newUser.User_Name, Pass = hashedPassword, newUser.User_Type, Date = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") });
+        }
+        showModal = false;
+        LoadUsers();
+    }
+
+    private async Task DeleteUser(string id)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "هل أنت متأكد من حذف هذا المستخدم؟");
+        if (!confirm) return;
+        using var connection = dbService.CreateConnection();
+        await connection.ExecuteAsync("UPDATE Users SET IsDeleted = 1 WHERE Id = @Id", new { Id = id });
+        LoadUsers();
+    }
+
+    public class UserModel
+    {
+        public string Id { get; set; } = "";
+        public string User_FullName { get; set; } = "";
+        public string User_Name { get; set; } = "";
+        public string User_Password { get; set; } = "";
+        public int User_Type { get; set; }
+    }
+}

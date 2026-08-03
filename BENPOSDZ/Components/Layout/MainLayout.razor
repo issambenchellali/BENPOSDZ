@@ -1,0 +1,350 @@
+﻿@inherits LayoutComponentBase
+@using BENPOSDZ.Services
+@inject AuthService authService
+@inject DatabaseService dbService
+@inject NavigationManager Navigation
+@inject CloudSyncService syncService
+@inject IJSRuntime JS
+@inject IApplicationStateService appState
+@inject ToastService toastService
+@inject UpdateService updateService
+@implements IDisposable
+@using Dapper
+
+@if (authService.IsLoggedIn)
+{
+    @if (authService.DateTampered)
+    {
+        <div class="tamper-screen">
+            <div class="tamper-box">
+                <h1>⛔ تم اكتشاف تلاعب بالنظام</h1>
+                <p>لقد تم إرجاع تاريخ الجهاز للوراء. البرنامج مغلق لأسباب أمنية.</p>
+                <p>الرجاء ضبط تاريخ الويندوز الصحيح وإعادة تشغيل البرنامج.</p>
+                <button class="btn-logout" @onclick="Logout">إغلاق الجلسة</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (!authService.IsLicensed && authService.IsTrialExpired)
+        {
+            <div class="trial-banner">
+                ⏳ انتهت النسخة التجريبية! تم قفل التقارير والفواتير. <a href="/settings">اضغط هنا للتفعيل</a>
+            </div>
+        }
+
+        @if (updateService.PendingUpdate != null && showUpdateBanner)
+        {
+            <div class="update-banner">
+                <span>🔁 يتوفر تحديث جديد: <strong>v@(updateService.PendingUpdate.version)</strong></span>
+                <div class="update-banner-actions">
+                    <button class="btn-sync" style="width:auto;" @onclick="StartUpdateDownload" disabled="@updateService.IsBusy">@(updateService.IsBusy ? "جارٍ التحديث..." : "تحديث الآن")</button>
+                    <button class="btn-logout" style="width:auto;" @onclick="DismissUpdateBanner">لاحقاً</button>
+                </div>
+            </div>
+        }
+
+        <div class="app-layout">
+            <nav class="sidebar">
+                <div class="sidebar-header">
+                    <h2>BEN POS</h2>
+                    <div class="user-info">
+                        <span>👤 @authService.CurrentUser?.User_FullName</span>
+                        <small class="connection-badge" style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
+							@appState.ConnectionStatus
+						</small>
+						@if (pendingSyncCount > 0)
+						{
+							<small class="connection-badge" style="color: #f59e0b; display:block; font-size: 10px;">
+								⏳ @pendingSyncCount عملية بانتظار المزامنة
+							</small>
+						}
+                        <div class="logout-row">
+                            <button class="btn-sync" @onclick="SyncData">☁️ مزامنة</button>
+                            <button class="btn-logout" @onclick="Logout">خروج</button>
+                        </div>
+                    </div>
+                </div>
+                <ul class="nav-links">
+                    <li><NavLink href="/pos">🛒 نقطة البيع</NavLink></li>
+                    @if (authService.IsLicensed)
+                    {
+                        <li><NavLink href="/invoices">🧾 الفواتير</NavLink></li>
+                    }
+                    @if (authService.IsAdmin)
+                    {
+                        <li><NavLink href="/persons">👥 العملاء والموردين</NavLink></li>
+                    }
+                    <li><NavLink href="/products">📦 إدارة المنتجات</NavLink></li>
+                    @if (authService.IsAdmin)
+                    {
+                        <li><NavLink href="/purchases">🚚 المشتريات</NavLink></li>
+                    }
+                    <li><NavLink href="/finance">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
+                    @if (authService.IsAdmin)
+                    {
+                        <li><NavLink href="/settings">⚙️ الإعدادات</NavLink></li>
+                    }
+                    @if (authService.IsAdmin && authService.IsLicensed)
+                    {
+                        <li><NavLink href="/users">👥 المستخدمون</NavLink></li>
+                    }
+                </ul>
+            </nav>
+
+            <main class="main-content">
+                <ErrorBoundary>
+                    <ChildContent>
+                        @Body
+                    </ChildContent>
+                    <ErrorContent Context="ex">
+                        <div style="text-align:center; padding:50px; color:#dc3545;">
+                            <h3>⚠️ حدث خطأ غير متوقع في هذه الصفحة</h3>
+                            <p>قد يكون السبب انقطاع الاتصال بقاعدة البيانات أو خطأ في استرجاع البيانات.</p>
+                            <p style="font-size:12px; color:#666;">@ex.Message</p>
+                            <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; background:#007bff; color:white; border:none; border-radius:5px; cursor:pointer;">إعادة تحميل البرنامج</button>
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
+            </main>
+        </div>
+
+        <!-- شريط التنقل السفلي (يظهر على الجوال فقط) -->
+        <nav class="bottom-nav">
+            <NavLink href="/pos" class="bn-item">🛒<span>نقطة البيع</span></NavLink>
+            @if (authService.IsLicensed)
+            {
+                <NavLink href="/invoices" class="bn-item">🧾<span>الفواتير</span></NavLink>
+            }
+            <NavLink href="/products" class="bn-item">📦<span>المنتجات</span></NavLink>
+            <NavLink href="/finance" class="bn-item">💰<span>المالية</span></NavLink>
+            @if (authService.IsAdmin)
+            {
+                <NavLink href="/settings" class="bn-item">⚙️<span>الإعدادات</span></NavLink>
+            }
+        </nav>
+    }
+
+    <!-- مكون الإشعارات (Toast Notifications) -->
+    @if (toastService.IsVisible)
+    {
+        <div class="toast-notification" style="background-color:@toastService.BackgroundColor;">
+            <div class="toast-title">@toastService.Title</div>
+            <div class="toast-message">@toastService.Message</div>
+        </div>
+    }
+}
+else
+{
+    <div class="loading-screen"><p>جاري التحويل...</p></div>
+}
+
+<style>
+    .tamper-screen { display: flex; justify-content: center; align-items: center; height: 100vh; background: #dc3545; color: white; text-align: center; }
+    .tamper-box { background: white; color: #333; padding: 40px; border-radius: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+    .tamper-box h1 { color: #dc3545; margin-bottom: 15px; }
+    
+    .trial-banner { background: #dc3545; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 14px; }
+    .trial-banner a { color: #ffeb3b; text-decoration: underline; }
+    .update-banner { background: #17a2b8; color: white; text-align: center; padding: 10px; font-size: 14px; display: flex; justify-content: center; align-items: center; gap: 15px; flex-wrap: wrap; }
+    .update-banner-actions { display: flex; gap: 8px; }
+    .app-layout { display: flex; height: calc(100vh - 40px); direction: rtl; }
+    .sidebar { width: 250px; background-color: #2c3e50; color: white; padding: 20px 0; display: flex; flex-direction: column; }
+    .sidebar-header { text-align: center; padding: 20px; border-bottom: 1px solid #3e5063; }
+    .user-info { margin-top: 15px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 14px; }
+    .connection-badge { display:block; font-size: 12px; margin-bottom: 5px; }
+    .logout-row { display: flex; gap: 5px; width: 100%; }
+    .btn-sync { background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; width: 100%; }
+    .btn-logout { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; width: 100%; }
+    .nav-links { list-style: none; padding: 0; margin: 0; flex: 1; }
+    .nav-links li a { display: block; padding: 15px 25px; color: #ecf0f1; text-decoration: none; font-size: 16px; transition: 0.3s; }
+    .nav-links li a:hover { background-color: #34495e; padding-right: 35px; }
+    .nav-links li a.active { background-color: #007bff; }
+    .main-content { flex: 1; padding: 30px; background-color: #f4f6f9; overflow-y: auto; }
+    .loading-screen { display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial; font-size: 20px; color: #666; }
+    .bottom-nav { display: none; }
+    
+    /* Toast Notification Style */
+    .toast-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 9999; min-width: 260px; max-width: 480px; text-align: center; animation: fadeIn 0.3s; }
+    .toast-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+    .toast-message { font-size: 13px; opacity: 0.95; }
+    @@keyframes fadeIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+    /* ===== واجهة الجوال (Mobile-First) ===== */
+    @@media (max-width: 768px) {
+        .app-layout { height: 100vh; }
+        .sidebar { display: none; }
+        .main-content { padding: 12px; padding-bottom: 76px; }
+        .bottom-nav {
+            display: flex;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 60px;
+            background: #2c3e50;
+            border-top: 1px solid #3e5063;
+            z-index: 1000;
+            justify-content: space-around;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .bn-item {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            flex: 1; color: #b8c4ce; text-decoration: none; font-size: 18px; gap: 2px;
+        }
+        .bn-item span { font-size: 10px; }
+        .bn-item.active { color: #007bff; }
+        .toast-notification { bottom: 70px; min-width: 240px; max-width: 92vw; }
+    }
+</style>
+
+@code {
+    private int pendingSyncCount = 0;
+    private bool showUpdateBanner = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!authService.IsLoggedIn)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+            authService.CheckLicense(dbService);
+            authService.CheckDateTamper(dbService);
+            // مزامنة حالة الاتصال الفعلية مع الواجهة (وضع LAN يُظهر حالة MySQL الصحيحة)
+            appState.SetConnectionStatus(dbService.ConnectionStatus);
+        }
+        catch (Exception ex)
+        {
+            dbService.SystemLog = $"[{DateTime.Now:HH:mm:ss}] ❌ MainLayout License Check Error: {ex.Message}\n" + dbService.SystemLog;
+        }
+
+        // الاشتراك في الأحداث (Event-Driven)
+        appState.OnConnectionStateChanged += HandleConnectionStateChanged;
+        toastService.OnChange += HandleToastChange;
+
+        // حساب العمليات المعلقة كل 30 ثانية
+        await CalculatePendingSync();
+        _ = Task.Run(async () => {
+            while (true)
+            {
+                await Task.Delay(30000);
+                await CalculatePendingSync();
+                // فحص دوري للتحديثات (كل 24 ساعة تقريباً)
+                if (updateService.CheckPeriodic && (DateTime.UtcNow - updateService.LastUpdateCheckUtc).TotalHours >= 24)
+                    _ = CheckForUpdatesSilentAsync();
+            }
+        });
+
+        // فحص التحديثات عند الإقلاع (خلفية هادئة)
+        if (updateService.CheckOnStart)
+            _ = CheckForUpdatesSilentAsync();
+    }
+
+    private async Task CheckForUpdatesSilentAsync()
+    {
+        try
+        {
+            bool hasUpdate = await updateService.CheckForUpdateAsync();
+            if (!hasUpdate) return;
+            if (updateService.AutoDownload)
+                await InstallUpdateNowAsync();
+            else
+            {
+                showUpdateBanner = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch { }
+    }
+
+    private async Task StartUpdateDownload()
+    {
+        if (updateService.PendingUpdate == null) return;
+        await InstallUpdateNowAsync();
+    }
+
+    private void DismissUpdateBanner()
+    {
+        showUpdateBanner = false;
+        updateService.DismissPendingUpdate();
+    }
+
+    private async Task InstallUpdateNowAsync()
+    {
+        if (updateService.PendingUpdate == null) return;
+        try
+        {
+            await updateService.DownloadAndInstallAsync(updateService.PendingUpdate, null);
+            ShutdownApp();
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل التحديث: " + ex.Message, "❌ التحديثات");
+        }
+    }
+
+    private static void ShutdownApp()
+    {
+        try { Application.Current?.Quit(); } catch { }
+        try { Environment.Exit(0); } catch { }
+    }
+
+    private void HandleConnectionStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleToastChange()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Logout()
+    {
+        authService.Logout();
+        Navigation.NavigateTo("/login");
+    }
+
+    private async Task SyncData()
+    {
+        toastService.ShowSuccess("جاري مزامنة البيانات مع السحابة...", "☁️ المزامنة");
+        try
+        {
+            await syncService.SyncAllAsync();
+            toastService.ShowSuccess("تمت المزامنة بنجاح", "☁️ المزامنة");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ في المزامنة: " + ex.Message, "❌ المزامنة");
+        }
+    }
+
+    public void Dispose()
+    {
+        // تنظيف الاشتراكات لتفادي تسرب الذاكرة
+        appState.OnConnectionStateChanged -= HandleConnectionStateChanged;
+        toastService.OnChange -= HandleToastChange;
+    }
+
+    private async Task CalculatePendingSync()
+    {
+        try
+        {
+            // نقرأ من القاعدة النشطة (نفس مصدر المزامنة):
+            // Local → SQLite، LAN → MySQL
+            using var connection = dbService.CreateConnection();
+            var tables = new[] { "Orders", "Order_Details", "Products", "Persons", "Expenses", "Product_Types" };
+            int count = 0;
+            foreach (var t in tables)
+            {
+                count += await connection.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM {t} WHERE IsSynced = 0");
+            }
+            pendingSyncCount = count;
+            // تحديث مؤشر حالة الاتصال في الواجهة بعد كل فحص دوري
+            appState.SetConnectionStatus(dbService.ConnectionStatus);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { }
+    }
+}

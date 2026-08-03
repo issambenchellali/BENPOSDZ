@@ -1,0 +1,625 @@
+@page "/dashboard"
+@using BENPOSDZ.Services
+@using Dapper
+@inject DatabaseService dbService
+@inject AuthService authService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ToastService toastService
+
+<div class="fin-page">
+    <div class="fin-header">
+        <div>
+            <h1>💰 الإدارة المالية ولوحة التحكم</h1>
+            <p class="fin-subtitle">@DateTime.Now.ToString("dddd, dd MMMM yyyy")</p>
+        </div>
+        <div class="fin-actions">
+            @if (authService.IsAdmin)
+            {
+                <button class="fin-btn" @onclick="OpenTransferModal">↔️ نقل إلى الخزنة</button>
+                <button class="fin-btn green" @onclick="OpenExpenseModal">+ مصروف جديد</button>
+            }
+            <button class="fin-btn ref" @onclick="LoadAllAsync">🔄 تحديث</button>
+        </div>
+    </div>
+
+    <!-- نظرة عامة: الصندوق والخزنة -->
+    <div class="fin-cards">
+        @if (authService.IsAdmin || settingsShowCaisse)
+        {
+            <div class="fin-card caisse">
+                <div class="fin-card-icon">🛒</div>
+                <div class="fin-card-body">
+                    <span class="fin-card-label">صندوق المبيعات (Caisse)</span>
+                    <span class="fin-card-value">@caisseAmount.ToString("0.00") د.ج</span>
+                </div>
+                @if (authService.IsAdmin)
+                {
+                    <button class="fin-card-btn" @onclick="OpenTransferModal">نقل</button>
+                }
+            </div>
+        }
+        @if (authService.IsAdmin)
+        {
+            <div class="fin-card coffer">
+                <div class="fin-card-icon">🏦</div>
+                <div class="fin-card-body">
+                    <span class="fin-card-label">خزنة المال (Coffer)</span>
+                    <span class="fin-card-value">@cofferAmount.ToString("0.00") د.ج</span>
+                </div>
+            </div>
+        }
+        <div class="fin-card expenses">
+            <div class="fin-card-icon">💸</div>
+            <div class="fin-card-body">
+                <span class="fin-card-label">مصاريف اليوم</span>
+                <span class="fin-card-value">@todayExpenses.ToString("0.00") د.ج</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- الأداء المالي: اليوم / الشهر / الكل -->
+    @if (authService.IsAdmin)
+    {
+        <div class="fin-section">
+            <div class="fin-section-head">
+                <h3>📊 الأداء المالي</h3>
+                <div class="period-tabs">
+                    <button class="period-tab @(selectedPeriod == 0 ? "active" : "")" @onclick="() => selectedPeriod = 0">اليوم</button>
+                    <button class="period-tab @(selectedPeriod == 1 ? "active" : "")" @onclick="() => selectedPeriod = 1">الشهر</button>
+                    <button class="period-tab @(selectedPeriod == 2 ? "active" : "")" @onclick="() => selectedPeriod = 2">الكل</button>
+                </div>
+            </div>
+
+            @if (CurrentPeriod != null)
+            {
+                <div class="perf-cards">
+                    <div class="perf-card sales">
+                        <span class="perf-label">صافي المبيعات</span>
+                        <span class="perf-value">@CurrentPeriod.NetSales.ToString("0.00") د.ج</span>
+                        <span class="perf-note">بعد خصم المشتريات والمرجعات</span>
+                    </div>
+                    <div class="perf-card profit">
+                        <span class="perf-label">الأرباح</span>
+                        <span class="perf-value">@CurrentPeriod.Profit.ToString("0.00") د.ج</span>
+                        <span class="perf-note">صافي الربح المقدر</span>
+                    </div>
+                    <div class="perf-card purchases">
+                        <span class="perf-label">المشتريات</span>
+                        <span class="perf-value">@CurrentPeriod.Purchases.ToString("0.00") د.ج</span>
+                        <span class="perf-note">مخصومة من الخزنة</span>
+                    </div>
+                    <div class="perf-card returns">
+                        <span class="perf-label">المرجعات</span>
+                        <span class="perf-value">@CurrentPeriod.Returns.ToString("0.00") د.ج</span>
+                        <span class="perf-note">مُسترجعة من الصندوق</span>
+                    </div>
+                    <div class="perf-card exp">
+                        <span class="perf-label">المصاريف</span>
+                        <span class="perf-value">@CurrentPeriod.Expenses.ToString("0.00") د.ج</span>
+                        <span class="perf-note">مخصومة من الصندوق</span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- قيمة المخزون -->
+        <div class="fin-section">
+            <div class="fin-section-head"><h3>📦 قيمة المخزون</h3></div>
+            <div class="perf-cards">
+                <div class="perf-card inv1">
+                    <span class="perf-label">بسعر الشراء</span>
+                    <span class="perf-value">@stockBuyValue.ToString("0.00") د.ج</span>
+                    <span class="perf-note">رأس مال البضاعة المتوفرة</span>
+                </div>
+                <div class="perf-card inv2">
+                    <span class="perf-label">بالجملة</span>
+                    <span class="perf-value">@stockWholesaleValue.ToString("0.00") د.ج</span>
+                    <span class="perf-note">القيمة بسعر الجملة</span>
+                </div>
+                <div class="perf-card inv3">
+                    <span class="perf-label">بالتجزئة (أقل)</span>
+                    <span class="perf-value">@stockRetailMinValue.ToString("0.00") د.ج</span>
+                    <span class="perf-note">أدنى سعر تجزئة</span>
+                </div>
+                <div class="perf-card inv4">
+                    <span class="perf-label">بالتجزئة (أكثر)</span>
+                    <span class="perf-value">@stockRetailMaxValue.ToString("0.00") د.ج</span>
+                    <span class="perf-note">أعلى سعر تجزئة</span>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- التنبيهات وآخر الفواتير -->
+    <div class="fin-grid">
+        <div class="fin-panel">
+            <div class="fin-panel-head">
+                <h3>⚠️ تنبيهات المخزون</h3>
+                <span class="fin-badge">@lowStockProducts.Count</span>
+            </div>
+            <div class="fin-panel-body">
+                @if (!lowStockProducts.Any())
+                {
+                    <p class="fin-empty">المخزون بحالة جيدة 🎉</p>
+                }
+                else
+                {
+                    <ul class="fin-alerts">
+                        @foreach (var p in lowStockProducts)
+                        {
+                            <li class="@(p.Pro_Qty <= 0 ? "out" : "low")">
+                                <span>@p.Pro_Name</span>
+                                <strong>متوفر: @p.Pro_Qty @p.Pro_Unit</strong>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <div class="fin-panel">
+            <div class="fin-panel-head">
+                <h3>⏳ منتجات منتهية الصلاحية</h3>
+                <span class="fin-badge red">@expiredProducts.Count</span>
+            </div>
+            <div class="fin-panel-body">
+                @if (!expiredProducts.Any())
+                {
+                    <p class="fin-empty">لا توجد منتجات منتهية 🎉</p>
+                }
+                else
+                {
+                    <ul class="fin-alerts">
+                        @foreach (var p in expiredProducts)
+                        {
+                            <li class="out"><span>@p.Pro_Name</span><strong>انتهت: @p.Pro_date_exp</strong></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <div class="fin-panel">
+            <div class="fin-panel-head"><h3>🧾 آخر الفواتير</h3></div>
+            <div class="fin-panel-body">
+                @if (!recentInvoices.Any())
+                {
+                    <p class="fin-empty">لا توجد فواتير بعد.</p>
+                }
+                else
+                {
+                    <table class="fin-mini-table">
+                        <thead><tr><th>الوقت</th><th>الزبون</th><th>المبلغ</th></tr></thead>
+                        <tbody>
+                            @foreach (var inv in recentInvoices)
+                            {
+                                <tr>
+                                    <td>@inv.Order_Date.ToString("HH:mm")</td>
+                                    <td>@inv.Person_Name</td>
+                                    <td>@inv.Price د.ج</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- سجل المصاريف -->
+    <div class="fin-section">
+        <div class="fin-section-head">
+            <h3>📒 سجل المصاريف</h3>
+            <span class="fin-count">آخر @expensesList.Count مصروف</span>
+        </div>
+        <div class="fin-exp-table-wrap">
+            <table class="fin-exp-table">
+                <thead>
+                    <tr><th>التاريخ</th><th>المصروف</th><th>المبلغ</th><th>ملاحظات</th><th>إجراء</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var exp in expensesList)
+                    {
+                        <tr>
+                            <td>@exp.Expn_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@exp.Expn_Name</td>
+                            <td class="exp-amount">@exp.Expn_Price.ToString("0.00") د.ج</td>
+                            <td>@exp.Expn_Notes</td>
+                            <td>
+                                @if (authService.IsAdmin)
+                                {
+                                    <button class="fin-del" @onclick="() => DeleteExpense(exp.Id)">🗑️</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (!expensesList.Any())
+                    {
+                        <tr><td colspan="5" class="fin-empty">لا توجد مصاريف مسجلة.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (showTransferModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width:400px;">
+            <h3>↔️ تفريغ الصندوق إلى الخزنة</h3>
+            <p>المبلغ المتوفر في الصندوق: <strong>@caisseAmount.ToString("0.00") د.ج</strong></p>
+            <div class="form-group">
+                <label>المبلغ المراد نقله</label>
+                <input type="number" @bind="transferAmount" min="0" max="@caisseAmount" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="ConfirmTransfer">تأكيد النقل</button>
+                <button class="btn-cancel" @onclick="() => showTransferModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showExpenseModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width:500px;">
+            <h3>💸 تسجيل مصروف جديد</h3>
+            <div class="form-group">
+                <label>اسم المصروف (مثال: إيجار، كهرباء، شراء بضاعة)</label>
+                <input type="text" @bind="newExpenseName" />
+            </div>
+            <div class="form-group">
+                <label>المبلغ (دج)</label>
+                <input type="number" @bind="newExpensePrice" min="0" />
+            </div>
+            <div class="form-group">
+                <label>ملاحظات</label>
+                <input type="text" @bind="newExpenseNotes" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="SaveExpense">خصم من صندوق المبيعات (Caisse)</button>
+                <button class="btn-cancel" @onclick="() => showExpenseModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .fin-page { direction: rtl; }
+    .fin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 10px; }
+    .fin-header h1 { margin: 0; font-size: 24px; color: #2c3e50; }
+    .fin-subtitle { margin: 4px 0 0 0; color: #888; font-size: 13px; }
+    .fin-actions { display: flex; gap: 10px; }
+    .fin-btn { background: #007bff; color: white; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; }
+    .fin-btn.green { background: #28a745; }
+    .fin-btn.ref { background: #6c757d; }
+    .fin-btn:hover { opacity: 0.9; }
+
+    .fin-cards { display: flex; gap: 20px; margin-bottom: 25px; }
+    .fin-card { flex: 1; display: flex; align-items: center; gap: 15px; padding: 20px; border-radius: 14px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.12); min-width: 0; }
+    .fin-card.caisse { background: linear-gradient(135deg, #28a745, #218838); }
+    .fin-card.coffer { background: linear-gradient(135deg, #007bff, #0062cc); }
+    .fin-card.expenses { background: linear-gradient(135deg, #dc3545, #c82333); }
+    .fin-card-icon { font-size: 34px; }
+    .fin-card-body { flex: 1; display: flex; flex-direction: column; }
+    .fin-card-label { font-size: 13px; opacity: 0.9; }
+    .fin-card-value { font-size: 24px; font-weight: bold; margin-top: 4px; }
+    .fin-card-btn { background: rgba(255,255,255,0.25); color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+    .fin-section { background: white; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 20px; margin-bottom: 25px; }
+    .fin-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .fin-section-head h3 { margin: 0; font-size: 18px; color: #333; }
+    .fin-count { color: #888; font-size: 13px; }
+
+    .period-tabs { display: flex; gap: 5px; background: #f1f3f5; padding: 4px; border-radius: 8px; }
+    .period-tab { border: none; background: transparent; padding: 7px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: #666; font-size: 14px; }
+    .period-tab.active { background: #007bff; color: white; }
+
+    .perf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; }
+    .perf-card { padding: 18px; border-radius: 12px; color: white; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+    .perf-card.sales { background: linear-gradient(135deg, #007bff, #0056b3); }
+    .perf-card.profit { background: linear-gradient(135deg, #28a745, #1e7e34); }
+    .perf-card.purchases { background: linear-gradient(135deg, #6610f2, #520dc2); }
+    .perf-card.returns { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333; }
+    .perf-card.exp { background: linear-gradient(135deg, #dc3545, #c82333); }
+    .perf-card.inv1 { background: linear-gradient(135deg, #17a2b8, #138496); }
+    .perf-card.inv2 { background: linear-gradient(135deg, #fd7e14, #dc6502); }
+    .perf-card.inv3 { background: linear-gradient(135deg, #20c997, #16967c); }
+    .perf-card.inv4 { background: linear-gradient(135deg, #6f42c1, #5a32a3); }
+    .perf-label { font-size: 13px; opacity: 0.9; }
+    .perf-value { font-size: 22px; font-weight: bold; }
+    .perf-note { font-size: 12px; opacity: 0.8; }
+
+    .fin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
+    .fin-panel { background: white; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
+    .fin-panel-head { padding: 14px 18px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .fin-panel-head h3 { margin: 0; font-size: 16px; color: #333; }
+    .fin-badge { background: #dc3545; color: white; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+    .fin-badge.red { background: #dc3545; }
+    .fin-panel-body { padding: 10px 18px; max-height: 280px; overflow-y: auto; }
+    .fin-empty { color: #999; text-align: center; padding: 18px; }
+
+    .fin-alerts { list-style: none; padding: 0; margin: 0; }
+    .fin-alerts li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f8f8f8; font-size: 14px; }
+    .fin-alerts li.low { color: #d39e00; }
+    .fin-alerts li.out { color: #dc3545; font-weight: bold; }
+    .fin-alerts li:last-child { border-bottom: none; }
+
+    .fin-mini-table { width: 100%; border-collapse: collapse; }
+    .fin-mini-table th { text-align: right; color: #666; font-size: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+    .fin-mini-table td { padding: 9px 0; border-bottom: 1px solid #f8f8f8; font-size: 14px; }
+
+    .fin-exp-table-wrap { overflow-x: auto; }
+    .fin-exp-table { width: 100%; border-collapse: collapse; }
+    .fin-exp-table th { background: #f8f9fa; padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6; color: #333; }
+    .fin-exp-table td { padding: 10px; border-bottom: 1px solid #eee; }
+    .exp-amount { font-weight: bold; color: #dc3545; }
+    .fin-del { background: none; border: none; cursor: pointer; color: #dc3545; font-size: 16px; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
+    .modal-box { background: white; padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; text-align: center; }
+    .form-group { text-align: right; margin-bottom: 10px; }
+    .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+    .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+    .btn-save { background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+</style>
+
+@code {
+    private bool settingsShowCaisse = false;
+    private decimal caisseAmount = 0;
+    private decimal cofferAmount = 0;
+    private decimal todayExpenses = 0;
+    private decimal stockBuyValue = 0, stockWholesaleValue = 0, stockRetailMinValue = 0, stockRetailMaxValue = 0;
+
+    private List<LowStockModel> lowStockProducts = new();
+    private List<ExpiredProductModel> expiredProducts = new();
+    private List<RecentInvoiceModel> recentInvoices = new();
+    private List<ExpenseModel> expensesList = new();
+
+    private PeriodStats? todayStats;
+    private PeriodStats? monthStats;
+    private PeriodStats? totalStats;
+    private int selectedPeriod = 0;
+    private PeriodStats? CurrentPeriod => selectedPeriod switch { 1 => monthStats, 2 => totalStats, _ => todayStats };
+
+    private bool showTransferModal = false;
+    private decimal transferAmount = 0;
+    private bool showExpenseModal = false;
+    private string newExpenseName = "";
+    private decimal newExpensePrice = 0;
+    private string newExpenseNotes = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!authService.IsLicensed) { Nav.NavigateTo("/pos"); return; }
+
+        if (authService.IsAdmin)
+        {
+            using var localConn = dbService.CreateLocalConnection();
+            var settingVal = await localConn.QueryFirstOrDefaultAsync<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ShowCaisseToVendeur'");
+            settingsShowCaisse = (settingVal == "true");
+        }
+
+        await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync()
+    {
+        try
+        {
+            using var connection = dbService.CreateConnection();
+
+            await QueryProfiler.TimeAsync(dbService, "Dashboard.Balances", async () =>
+            {
+                caisseAmount = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Caisse LIMIT 1");
+                cofferAmount = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Coffer LIMIT 1");
+            });
+
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            todayExpenses = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Expn_Price), 0) FROM Expenses WHERE substr(Expn_Date, 1, 10) = @Today AND IsDeleted = 0", new { Today = today });
+
+            if (authService.IsAdmin)
+            {
+                var now = DateTime.UtcNow;
+                var todayFrom = new DateTime(now.Year, now.Month, now.Day);
+                var tomorrow = todayFrom.AddDays(1);
+                var monthFrom = new DateTime(now.Year, now.Month, 1);
+                var nextMonth = monthFrom.AddMonths(1);
+                string Fmt(DateTime d) => d.ToString("yyyy-MM-dd HH:mm:ss");
+
+                todayStats = await GetPeriodStats(Fmt(todayFrom), Fmt(tomorrow));
+                monthStats = await GetPeriodStats(Fmt(monthFrom), Fmt(nextMonth));
+                totalStats = await GetPeriodStats("2000-01-01 00:00:00", "2100-01-01 00:00:00");
+
+                await QueryProfiler.TimeAsync(dbService, "Dashboard.Inventory", async () =>
+                {
+                    stockBuyValue = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Pro_Qty * Pro_BuyPrice), 0) FROM Products WHERE IsDeleted = 0");
+                    stockWholesaleValue = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Pro_Qty * Pro_SalePriceG), 0) FROM Products WHERE IsDeleted = 0");
+                    stockRetailMinValue = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Pro_Qty * Pro_SalePrice_Min), 0) FROM Products WHERE IsDeleted = 0");
+                    stockRetailMaxValue = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Pro_Qty * Pro_SalePrice_Max), 0) FROM Products WHERE IsDeleted = 0");
+                });
+            }
+
+            await QueryProfiler.TimeAsync(dbService, "Dashboard.RecentLists", async () =>
+            {
+                lowStockProducts = (await connection.QueryAsync<LowStockModel>("SELECT Pro_Name, Pro_Qty, Pro_Unit FROM Products WHERE IsDeleted = 0 AND Pro_QtyMin > 0 AND Pro_Qty <= Pro_QtyMin LIMIT 10")).ToList();
+
+                string recentSql = @"SELECT o.Order_Date, o.Price, CASE WHEN p.Person_Name IS NULL THEN 'Au Comptoir' ELSE p.Person_Name END as Person_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id WHERE o.IsDeleted = 0 AND o.Order_Type IN (0,1) ORDER BY o.Order_Date DESC LIMIT 5";
+                recentInvoices = (await connection.QueryAsync<RecentInvoiceModel>(recentSql)).ToList();
+
+                string expiredSql = "SELECT Pro_Name, Pro_date_exp FROM Products WHERE IsDeleted = 0 AND Pro_date_exp IS NOT NULL AND date(Pro_date_exp) < date('now') LIMIT 10";
+                expiredProducts = (await connection.QueryAsync<ExpiredProductModel>(expiredSql)).ToList();
+            });
+
+            await LoadExpensesAsync();
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ في تحميل البيانات: " + ex.Message, "❌ لوحة التحكم");
+        }
+    }
+
+    private async Task<PeriodStats> GetPeriodStats(string from, string to)
+    {
+        return await QueryProfiler.TimeAsync(dbService, $"Dashboard.PeriodStats({from}..{to})", async () =>
+        {
+            using var connection = dbService.CreateConnection();
+            var p = new { From = from, To = to };
+
+            decimal sales = await connection.ExecuteScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(Price),0) FROM Orders WHERE Order_Type IN (0,1) AND IsDeleted=0 AND Order_Date >= @From AND Order_Date < @To", p);
+            decimal purchases = await connection.ExecuteScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(Price),0) FROM Orders WHERE Order_Type=2 AND IsDeleted=0 AND Order_Date >= @From AND Order_Date < @To", p);
+            decimal returns = await connection.ExecuteScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(Price),0) FROM Orders WHERE Order_Type IN (3,4) AND IsDeleted=0 AND Order_Date >= @From AND Order_Date < @To", p);
+            decimal profit = await connection.ExecuteScalarAsync<decimal>(@"
+                SELECT COALESCE(SUM((od.Pro_Price - pr.Pro_BuyPrice) * od.Pro_Qty * (CASE WHEN o.Order_Type IN (3,4) THEN -1 ELSE 1 END)),0)
+                FROM Order_Details od
+                JOIN Orders o ON od.Order_ID = o.Id
+                JOIN Products pr ON od.Pro_ID = pr.Id
+                WHERE o.Order_Type IN (0,1,3,4) AND o.IsDeleted = 0 AND o.Order_Date >= @From AND o.Order_Date < @To", p);
+            decimal expenses = await connection.ExecuteScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(Expn_Price),0) FROM Expenses WHERE IsDeleted=0 AND Expn_Date >= @From AND Expn_Date < @To", p);
+
+            return new PeriodStats(sales, purchases, returns, profit, expenses);
+        });
+    }
+
+    private async Task LoadExpensesAsync()
+    {
+        using var connection = dbService.CreateConnection();
+        expensesList = (await connection.QueryAsync<ExpenseModel>("SELECT * FROM Expenses WHERE IsDeleted = 0 ORDER BY Expn_Date DESC LIMIT 50")).ToList();
+    }
+
+    private void OpenTransferModal() { transferAmount = caisseAmount; showTransferModal = true; }
+
+    private async Task ConfirmTransfer()
+    {
+        if (transferAmount <= 0 || transferAmount > caisseAmount)
+        {
+            toastService.ShowWarning("مبلغ غير صالح", "⚠️ النقل");
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount - @Amt, UpdatedAt = @Date", new { Amt = transferAmount, Date = dateNow }, transaction);
+            await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount + @Amt, UpdatedAt = @Date", new { Amt = transferAmount, Date = dateNow }, transaction);
+
+            transaction.Commit();
+            showTransferModal = false;
+            toastService.ShowSuccessShort("تم نقل المبلغ إلى الخزنة بنجاح", "✅ النقل");
+            await LoadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("خطأ: " + ex.Message, "❌ النقل");
+        }
+    }
+
+    private void OpenExpenseModal()
+    {
+        newExpenseName = "";
+        newExpensePrice = 0;
+        newExpenseNotes = "";
+        showExpenseModal = true;
+    }
+
+    private async Task SaveExpense()
+    {
+        if (!authService.IsAdmin) return;
+        if (newExpensePrice <= 0 || string.IsNullOrWhiteSpace(newExpenseName))
+        {
+            toastService.ShowWarning("الرجاء إدخال اسم والمبلغ.", "⚠️ المصروف");
+            return;
+        }
+
+        if (newExpensePrice > caisseAmount)
+        {
+            toastService.ShowWarning("المبلغ المطلوب أكبر من رصيد صندوق المبيعات!", "⚠️ المصروف");
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount - @Amt, UpdatedAt = @Date", new { Amt = newExpensePrice, Date = dateNow }, transaction);
+            await connection.ExecuteAsync("INSERT INTO Expenses (Id, Expn_Name, Expn_Price, Expn_Date, Expn_Notes, UpdatedAt) VALUES (@Id, @Name, @Price, @Date, @Notes, @Date)",
+                new { Id = Guid.NewGuid().ToString(), Name = newExpenseName, Price = newExpensePrice, Date = dateNow, Notes = newExpenseNotes }, transaction);
+
+            transaction.Commit();
+            showExpenseModal = false;
+            toastService.ShowSuccessShort("تم تسجيل المصروف", "✅ المصروف");
+            await LoadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("خطأ: " + ex.Message, "❌ المصروف");
+        }
+    }
+
+    private async Task DeleteExpense(string id)
+    {
+        if (!authService.IsAdmin) return;
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "حذف هذا المصروف سيعيد المبلغ للصندوق (Caisse). متابعة؟");
+        if (!confirm) return;
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            var exp = await connection.QueryFirstOrDefaultAsync<ExpenseModel>("SELECT * FROM Expenses WHERE Id = @Id", new { Id = id }, transaction);
+            if (exp != null)
+            {
+                await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount + @Amt", new { Amt = exp.Expn_Price }, transaction);
+                await connection.ExecuteAsync("UPDATE Expenses SET IsDeleted = 1 WHERE Id = @Id", new { Id = id }, transaction);
+            }
+            transaction.Commit();
+            toastService.ShowSuccessShort("تم حذف المصروف وإرجاع المبلغ للصندوق", "✅ المصروف");
+            await LoadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("خطأ: " + ex.Message, "❌ المصروف");
+        }
+    }
+
+    public class PeriodStats
+    {
+        public decimal Sales { get; }
+        public decimal Purchases { get; }
+        public decimal Returns { get; }
+        public decimal Profit { get; }
+        public decimal Expenses { get; }
+        public decimal NetSales => Sales - Purchases - Returns;
+        public PeriodStats(decimal sales, decimal purchases, decimal returns, decimal profit, decimal expenses)
+        {
+            Sales = sales; Purchases = purchases; Returns = returns; Profit = profit; Expenses = expenses;
+        }
+    }
+
+    public class LowStockModel { public string Pro_Name { get; set; } = ""; public decimal Pro_Qty { get; set; } public string? Pro_Unit { get; set; } }
+    public class ExpiredProductModel { public string Pro_Name { get; set; } = ""; public string? Pro_date_exp { get; set; } }
+    public class RecentInvoiceModel { public DateTime Order_Date { get; set; } public decimal Price { get; set; } public string Person_Name { get; set; } = ""; }
+    public class ExpenseModel
+    {
+        public string Id { get; set; } = "";
+        public string Expn_Name { get; set; } = "";
+        public decimal Expn_Price { get; set; }
+        public DateTime Expn_Date { get; set; }
+        public string? Expn_Notes { get; set; }
+    }
+}

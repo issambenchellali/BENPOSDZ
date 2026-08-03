@@ -1,0 +1,22 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# توقيع أندرويد — لا ترفع الـ keystore أو كلمات المرور إطلاقاً
+keys/
+*.keystore
+*.password.txt
+
+# إصدارات محلية
+releases/
+*.zip
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# سجلات
+*.log

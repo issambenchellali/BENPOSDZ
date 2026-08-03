@@ -1,0 +1,190 @@
+@page "/returns"
+@using BENPOSDZ.Services
+@using Dapper
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject AuthService authService
+
+<h2>استرجاع السلع (Les Retours)</h2>
+
+<div class="top-bar">
+    <select @bind="selectedInvoiceId" @bind:after="LoadInvoiceDetails" class="invoice-select">
+        <option value="">-- اختر فاتورة البيع --</option>
+        @foreach (var inv in invoicesList)
+        {
+            <option value="@inv.Id">@inv.Order_Date.ToString("yyyy-MM-dd HH:mm") - مبلغ: @inv.Price د.ج - دين: @inv.Unpaid د.ج</option>
+        }
+    </select>
+</div>
+
+@if (invoiceDetails.Any())
+{
+    <table class="returns-table">
+        <thead>
+            <tr>
+                <th>السلعة</th>
+                <th>الكمية المشتراة</th>
+                <th>سعر الوحدة</th>
+                <th>الكمية المرتجعة</th>
+                <th>المبلغ المسترجع</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in invoiceDetails)
+            {
+                <tr>
+                    <td>@item.Pro_Name</td>
+                    <td>@item.Pro_Qty</td>
+                    <td>@item.Pro_Price د.ج</td>
+                    <td>
+                        <input type="number" min="0" max="@item.Pro_Qty" @bind="item.ReturnQty" style="width: 80px; text-align: center;" />
+                    </td>
+                    <td>@((item.ReturnQty * item.Pro_Price).ToString("0.00")) د.ج</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="return-summary">
+        <h3>إجمالي المبلغ المسترجع: <span class="total-return">@TotalReturnAmount.ToString("0.00") د.ج</span></h3>
+        <button class="btn-return" @onclick="ProcessReturn">تأكيد الاسترجاع</button>
+    </div>
+}
+
+<style>
+    .top-bar { margin-bottom: 20px; }
+    .invoice-select { width: 100%; padding: 10px; font-size: 16px; border: 2px solid #007bff; border-radius: 5px; }
+    .returns-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; margin-top: 15px;}
+    .returns-table th { background: #dc3545; color: white; padding: 12px; text-align: right; }
+    .returns-table td { padding: 10px; border-bottom: 1px solid #eee; }
+    .return-summary { margin-top: 20px; text-align: left; }
+    .total-return { color: #dc3545; }
+    .btn-return { background: #dc3545; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 18px; margin-top: 10px; }
+</style>
+
+@code {
+    private string selectedInvoiceId = "";
+    private List<InvoiceListModel> invoicesList = new List<InvoiceListModel>();
+    private List<ReturnDetailModel> invoiceDetails = new List<ReturnDetailModel>();
+
+    protected override async Task OnInitializedAsync() => await LoadInvoicesAsync();
+
+    private async Task LoadInvoicesAsync()
+    {
+        using var connection = dbService.CreateConnection();
+        // جلب فواتير البيع (0=تجزئة، 1=جملة) التي لم تُحذف
+        string sql = "SELECT Id, Order_Date, Price, Unpaid FROM Orders WHERE Order_Type IN (0, 1) AND IsDeleted = 0 ORDER BY Order_Date DESC LIMIT 50;";
+        invoicesList = (await connection.QueryAsync<InvoiceListModel>(sql)).ToList();
+    }
+
+    private async Task LoadInvoiceDetails()
+    {
+        if (string.IsNullOrEmpty(selectedInvoiceId))
+        {
+            invoiceDetails.Clear();
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        string sql = @"SELECT od.Id, od.Pro_ID, p.Pro_Name, od.Pro_Qty, od.Pro_Price 
+                       FROM Order_Details od 
+                       JOIN Products p ON od.Pro_ID = p.Id 
+                       WHERE od.Order_ID = @OrderId AND od.IsDeleted = 0";
+        
+        var details = await connection.QueryAsync<ReturnDetailModel>(sql, new { OrderId = selectedInvoiceId });
+        invoiceDetails = details.ToList();
+        
+        foreach (var item in invoiceDetails)
+        {
+            item.ReturnQty = 0; // افتراضياً 0
+        }
+    }
+
+    private decimal TotalReturnAmount => invoiceDetails.Sum(i => i.ReturnQty * i.Pro_Price);
+
+    private async Task ProcessReturn()
+    {
+        var itemsToReturn = invoiceDetails.Where(i => i.ReturnQty > 0).ToList();
+        if (!itemsToReturn.Any())
+        {
+            await JS.InvokeVoidAsync("alert", "الرجاء تحديد كمية المرتجع لسلعة واحدة على الأقل.");
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        
+        try
+        {
+            string returnOrderId = Guid.NewGuid().ToString();
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            decimal returnTotal = TotalReturnAmount;
+
+            // فصل المبلغ المُعاد نقداً عن الدين المُعفى:
+            // لا نعيد نقداً من الصندوق إلا ما دفعه الزبون فعلاً، والباقي يُخصم من دينه
+            var originalInvoice = invoicesList.FirstOrDefault(i => i.Id == selectedInvoiceId);
+            decimal originalUnpaid = originalInvoice?.Unpaid ?? 0;
+            decimal debtToReduce = Math.Min(returnTotal, originalUnpaid);
+            decimal cashRefund = returnTotal - debtToReduce;
+
+            // 1. إنشاء فاتورة مرتجع (Order_Type = 3) وربطها بالفاتورة الأصلية عبر Parent_Order_Id
+            //    Paid = المبلغ المسترجع نقداً، Unpaid = الدين المُعفى
+            await connection.ExecuteAsync(@"INSERT INTO Orders (Id, Order_Type, Order_Date, Person_ID, User_ID, Price, Paid, Unpaid, Parent_Order_Id, UpdatedAt, IsSynced, IsDeleted) 
+                                            VALUES (@Id, 3, @Date, (SELECT Person_ID FROM Orders WHERE Id = @OrigId), @User, @Price, @Paid, @Unpaid, @OrigId, @UpdatedAt, 0, 0)",
+                new { Id = returnOrderId, Date = dateNow, OrigId = selectedInvoiceId, User = authService.CurrentUser?.Id ?? "admin-id", Price = returnTotal, Paid = cashRefund, Unpaid = debtToReduce, UpdatedAt = dateNow }, transaction);
+
+            // 2. حفظ التفاصيل وإرجاع الكميات للمخزون
+            foreach (var item in itemsToReturn)
+            {
+                await connection.ExecuteAsync(@"INSERT INTO Order_Details (Id, Order_ID, Pro_ID, Pro_Qty, Pro_Price, UpdatedAt, IsSynced, IsDeleted) 
+                                                VALUES (@Id, @OrderId, @ProId, @Qty, @Price, @UpdatedAt, 0, 0)",
+                    new { Id = Guid.NewGuid().ToString(), OrderId = returnOrderId, ProId = item.Pro_ID, Qty = item.ReturnQty, Price = item.Pro_Price, UpdatedAt = dateNow }, transaction);
+
+                // زيادة المخزون
+                await connection.ExecuteAsync("UPDATE Products SET Pro_Qty = Pro_Qty + @Qty WHERE Id = @Id", new { Qty = item.ReturnQty, Id = item.Pro_ID }, transaction);
+            }
+
+            // 3. خصم النقد الفعلي فقط من الصندوق (ما لم يُدفع أصلاً لا يُسترجع)
+            if (cashRefund > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount - @Amount, UpdatedAt = @Date", new { Amount = cashRefund, Date = dateNow }, transaction);
+            }
+
+            // 4. خصم الدين عن الزبون (فقط المبلغ الذي لم يُسدَّد فعلاً من الفاتورة الأصلية)
+            if (debtToReduce > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Orders SET Unpaid = Unpaid - @Debt, Paid = Paid + @Debt WHERE Id = @Id", new { Debt = debtToReduce, Id = selectedInvoiceId }, transaction);
+            }
+
+            transaction.Commit();
+            await JS.InvokeVoidAsync("alert", "تمت عملية الاسترجاع بنجاح! تم إرجاع السلع للمخزون وخصم المبلغ.");
+            
+            selectedInvoiceId = "";
+            invoiceDetails.Clear();
+            await LoadInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            await JS.InvokeVoidAsync("alert", "حدث خطأ أثناء الاسترجاع: " + ex.Message);
+        }
+    }
+
+    public class InvoiceListModel
+    {
+        public string Id { get; set; } = "";
+        public DateTime Order_Date { get; set; }
+        public decimal Price { get; set; }
+        public decimal Unpaid { get; set; }
+    }
+
+    public class ReturnDetailModel
+    {
+        public string Id { get; set; } = "";
+        public string Pro_ID { get; set; } = "";
+        public string Pro_Name { get; set; } = "";
+        public decimal Pro_Qty { get; set; } // الكمية الأصلية
+        public decimal Pro_Price { get; set; }
+        public int ReturnQty { get; set; } // الكمية المرتجعة (التي سيدخلها المستخدم)
+    }
+}

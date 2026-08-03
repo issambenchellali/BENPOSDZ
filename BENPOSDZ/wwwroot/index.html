@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>BENPOSDZ</title>
+    <base href="/" />
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="BENPOSDZ.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+</head>
+
+<body>
+
+    <div class="status-bar-safe-area"></div>
+
+    <div id="app">Loading...</div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="_framework/blazor.webview.js" autostart="false"></script>
+<script>
+    window.printBarcode = function(name, barcode) {
+        if (!barcode) {
+            alert("لا يمكن طباعة الباركود: المنتج لا يملك باركود.");
+            return;
+        }
+
+        // إنشاء iframe مخفي للطباعة المباشرة بدون نوافذ منبثقة
+        var printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.top = '-1000px';
+        printFrame.style.left = '-1000px';
+        document.body.appendChild(printFrame);
+
+        var doc = printFrame.contentWindow.document;
+        doc.open();
+        doc.write('<html><head><title>Print Barcode</title>');
+        doc.write('<style>body { text-align: center; font-family: Arial, sans-serif; margin-top: 20px;} img { margin-top: 10px;}</style>');
+        doc.write('</head><body>');
+        doc.write('<h3>' + name + '</h3>');
+        doc.write('<img src="https://barcode.tec-it.com/barcode.ashx?data=' + encodeURIComponent(barcode) + '&code=Code128" alt="Barcode" />');
+        doc.write('<p>' + barcode + '</p>');
+        doc.write('</body></html>');
+        doc.close();
+
+        // الانتظار قليلاً لتحميل الصورة ثم الطباعة
+        setTimeout(function() {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+            // إزالة الـ iframe بعد الطباعة
+            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
+        }, 1000);
+    };
+</script>
+
+
+<script>
+    window.printDocument = function(docType, jsonData) {
+        var data = JSON.parse(jsonData);
+        var printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.top = '-1000px';
+        document.body.appendChild(printFrame);
+
+        var doc = printFrame.contentWindow.document;
+        doc.open();
+        
+        // تحديد العرض حسب نوع الطباعة (80mm للوصل، A4 للفاتورة)
+        var widthStyle = docType === 'receipt' ? 'width: 80mm;' : 'width: 210mm; padding: 20mm;';
+        doc.write('<html><head><title>Print</title>');
+        doc.write('<style>');
+        doc.write('body { font-family: Arial, sans-serif; ' + widthStyle + ' direction: rtl; }');
+        doc.write('table { width: 100%; border-collapse: collapse; margin-top: 10px;} th, td { border: 1px solid #ddd; padding: 5px; text-align: right;}');
+        doc.write('.text-center { text-align: center; } .total { text-align: left; font-weight: bold; margin-top: 10px; } h1, h2 { text-align: center; }');
+        doc.write('@media print { body { width: ' + (docType === 'receipt' ? '80mm' : 'auto') + '; } }');
+        doc.write('</style></head><body>');
+        
+        doc.write('<h2>BEN POS - متجر التجارة</h2>');
+        doc.write('<p>رقم: ' + data.invoiceId + ' | التاريخ: ' + data.date + '</p>');
+        doc.write('<p>الزبون: ' + data.customer + '</p>');
+        
+        doc.write('<table><thead><tr><th>السلعة</th><th>الكمية</th>');
+        if(docType !== 'delivery') {
+            doc.write('<th>السعر</th><th>المجموع</th>');
+        } else {
+            doc.write('<th>التوقيع</th>');
+        }
+        doc.write('</tr></thead><tbody>');
+        
+        data.items.forEach(item => {
+            doc.write('<tr><td>' + item.name + '</td><td>' + item.qty + '</td>');
+            if(docType !== 'delivery') {
+                doc.write('<td>' + item.price.toFixed(2) + '</td><td>' + item.total.toFixed(2) + '</td>');
+            } else {
+                doc.write('<td></td>');
+            }
+        });
+        
+        doc.write('</tbody></table>');
+        
+        if(docType !== 'delivery') {
+            doc.write('<div class="total">المجموع: ' + data.total.toFixed(2) + ' د.ج</div>');
+            doc.write('<div class="total">المدفوع: ' + data.paid.toFixed(2) + ' د.ج</div>');
+            if(data.debt > 0) {
+                doc.write('<div class="total" style="color:red;">الدين: ' + data.debt.toFixed(2) + ' د.ج</div>');
+            }
+        } else {
+            doc.write('<br/><br/><div style="display:flex; justify-content:space-between;"><span>توقيع البائع: ........................</span><span>توقيع الزبون: ........................</span></div>');
+        }
+        
+        doc.write('<p class="text-center">شكرا لزيارتكم</p>');
+        doc.write('</body></html>');
+        doc.close();
+
+        setTimeout(function() {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
+        }, 500);
+    };
+</script>
+<script>
+    window.printInventorySheet = function(jsonData) {
+        var data = JSON.parse(jsonData);
+        var printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.top = '-1000px';
+        document.body.appendChild(printFrame);
+
+        var doc = printFrame.contentWindow.document;
+        doc.open();
+        doc.write('<html><head><title>قائمة الجرد</title>');
+        doc.write('<style>body { font-family: Arial; direction: rtl; padding: 20px; } table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #000; padding: 10px; text-align: right; } .empty { height: 30px; }</style>');
+        doc.write('</head><body>');
+        doc.write('<h2 style="text-align:center;">قائمة جرد المخزون</h2>');
+        doc.write('<table><thead><tr><th>اسم السلعة</th><th>الكمية المعدودة</th></tr></thead><tbody>');
+        data.forEach(item => {
+            doc.write('<tr><td>' + item.name + '</td><td class="empty"></td></tr>');
+        });
+        doc.write('</tbody></table>');
+        doc.write('</body></html>');
+        doc.close();
+
+        setTimeout(function() {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
+        }, 500);
+    };
+</script>
+<script>
+    window.printProductList = function(jsonData) {
+        var data = JSON.parse(jsonData);
+        var items = data.items;
+        var opts = data.opts;
+
+        var printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.top = '-1000px';
+        document.body.appendChild(printFrame);
+
+        var doc = printFrame.contentWindow.document;
+        doc.open();
+        doc.write('<html><head><title>قائمة المنتجات</title>');
+        doc.write('<style>body { font-family: Arial; direction: rtl; padding: 20px; } table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #000; padding: 8px; text-align: right; } h2 { text-align: center; }</style>');
+        doc.write('</head><body>');
+        doc.write('<h2>قائمة المنتجات</h2>');
+        doc.write('<table><thead><tr><th>السلعة</th><th>الكمية</th>');
+        if(opts.buy) doc.write('<th>سعر الشراء</th>');
+        if(opts.whole) doc.write('<th>سعر الجملة</th>');
+        if(opts.min) doc.write('<th>تجزئة (أدنى)</th>');
+        if(opts.max) doc.write('<th>تجزئة (أعلى)</th>');
+        doc.write('</tr></thead><tbody>');
+        
+        items.forEach(p => {
+            doc.write('<tr><td>' + p.name + '</td>');
+            doc.write('<td>' + p.qty + '</td>');
+            if(opts.buy) doc.write('<td>' + parseFloat(p.buy).toFixed(2) + '</td>');
+            if(opts.whole) doc.write('<td>' + parseFloat(p.whole).toFixed(2) + '</td>');
+            if(opts.min) doc.write('<td>' + parseFloat(p.min).toFixed(2) + '</td>');
+            if(opts.max) doc.write('<td>' + parseFloat(p.max).toFixed(2) + '</td>');
+            doc.write('</tr>');
+        });
+        
+        doc.write('</tbody></table>');
+        doc.write('</body></html>');
+        doc.close();
+
+        setTimeout(function() {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
+        }, 500);
+    };
+</script>
+<script>
+    window.printHtml = function(html, isReceipt) {
+        var printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.top = '-1000px';
+        printFrame.style.left = '-1000px';
+        document.body.appendChild(printFrame);
+
+        var doc = printFrame.contentWindow.document;
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        setTimeout(function() {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
+        }, 500);
+    };
+</script>
+
+<script>
+    // تنزيل المعاينة كملف Word (.doc) — يعمل بمتصفحات WebView2 التي تسمح بالتنزيل
+    window.downloadDoc = function(html, filename) {
+        try {
+            var blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'document.doc';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+        } catch (e) {
+            alert('تعذر تنزيل الملف: ' + e.message);
+        }
+    };
+</script>
+
+<script>
+    // تفعيل سحب وإفلات الحقول في محرر القوالب (مع حماية من التكرار عند إعادة الرسم)
+    window.initTemplateEditor = function(dropTargetId) {
+        document.querySelectorAll('.ph-chip').forEach(function(el) {
+            if (el.__initDone) return;
+            el.__initDone = true;
+            el.setAttribute('draggable', 'true');
+            el.addEventListener('dragstart', function(ev) {
+                ev.dataTransfer.setData('text/plain', el.getAttribute('data-token'));
+            });
+        });
+
+        var ta = document.getElementById(dropTargetId);
+        if (ta && !ta.__dropBound) {
+            ta.__dropBound = true;
+            ta.addEventListener('dragover', function(ev) { ev.preventDefault(); });
+            ta.addEventListener('drop', function(ev) {
+                ev.preventDefault();
+                var token = ev.dataTransfer.getData('text/plain');
+                if (!token) return;
+                var start = ta.selectionStart || 0;
+                var end = ta.selectionEnd || 0;
+                ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
+                ta.selectionStart = ta.selectionEnd = start + token.length;
+                ta.focus();
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+        }
+    };
+</script>
+</body>
+
+</html>

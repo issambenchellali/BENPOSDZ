@@ -1,0 +1,330 @@
+@page "/persons"
+@using BENPOSDZ.Services
+@using Dapper
+@using System.Text
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject AuthService authService
+@inject PrintTemplateService printService
+@inject PrintService sysPrintService
+@inject ToastService toastService
+
+<h2>إدارة العملاء والموردين</h2>
+
+<div class="tabs">
+    <button class="tab-btn @(currentTab == 1 ? "active" : "")" @onclick="() => SwitchTab(1)">👥 العملاء</button>
+    @if (authService.IsAdmin)
+    {
+        <button class="tab-btn @(currentTab == 2 ? "active" : "")" @onclick="() => SwitchTab(2)">🚚 الموردين</button>
+    }
+</div>
+
+<div class="debt-summary">
+    <span>إجمالي الديون المتراكمة: <strong>@totalDebt.ToString("0.00") د.ج</strong></span>
+    <button class="btn-print-debts" @onclick="PrintDebts">🖨️ طباعة قائمة الديون</button>
+</div>
+
+<table class="persons-table">
+    <thead>
+        <tr>
+            <th>الاسم</th>
+            <th>الهاتف</th>
+            <th>الدين المتراكم</th>
+            <th>إجراءات</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var p in personsList)
+        {
+            <tr>
+                <td>@p.Person_Name</td>
+                <td>@p.Person_Phone</td>
+                <td class="@(p.Person_Debt > 0 ? "debt-color" : "no-debt")">@p.Person_Debt.ToString("0.00") د.ج</td>
+                <td>
+                    <button class="btn-history" @onclick="() => ViewHistory(p.Id, p.Person_Name)">📜 السجل</button>
+                    @if (p.Person_Debt > 0)
+                    {
+                        <button class="btn-pay" @onclick="() => OpenPayModal(p)">💵 تسديد الدين</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (showHistoryModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 700px;">
+            <h3>سجل معاملات: @historyName</h3>
+            <table class="history-table">
+                <thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th><th>طباعة</th></tr></thead>
+                <tbody>
+                    @foreach (var inv in personInvoices)
+                    {
+                        <tr>
+                            <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@GetTypeName(inv.Order_Type)</td>
+                            <td>@inv.Price د.ج</td>
+                            <td>@inv.Paid د.ج</td>
+                            <td>@inv.Unpaid د.ج</td>
+                            <td><button class="btn-print-sm" @onclick="() => PrintInvoice(inv.Id)">🖨️</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <button class="btn-cancel" @onclick="() => showHistoryModal = false" style="width:100%; margin-top:15px;">إغلاق</button>
+        </div>
+    </div>
+}
+
+@if (showPayModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 450px;">
+            <h3>تسديد دين</h3>
+            <p>الدين الحالي لـ <strong>@selectedPerson?.Person_Name</strong>: @selectedPerson?.Person_Debt.ToString("0.00") د.ج</p>
+            <div class="form-group">
+                <label>المبلغ المدفوع</label>
+                <input type="number" @bind="paymentAmount" min="0" max="@selectedPerson?.Person_Debt" />
+            </div>
+            <p class="hint">@((selectedPerson?.Person_Type == 1 ? "سيتم إضافة المبلغ للصندوق (Caisse)" : "سيتم خصم المبلغ من الخزنة (Coffer)"))</p>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="ConfirmPayment">تأكيد التسديد</button>
+                <button class="btn-cancel" @onclick="() => showPayModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; }
+    .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
+    .tab-btn.active { color: #007bff; border-bottom: 3px solid #007bff; }
+    .persons-table { width: 100%; background: white; border-radius: 8px; overflow: hidden; border-collapse: collapse; }
+    .persons-table th { background: #007bff; color: white; padding: 12px; text-align: right; }
+    .persons-table td { padding: 12px; border-bottom: 1px solid #eee; }
+    .debt-color { color: #dc3545; font-weight: bold; }
+    .no-debt { color: #28a745; }
+    .btn-history { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    .btn-pay { background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
+    .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; text-align: center;}
+    .history-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .history-table th { background: #f8f9fa; padding: 8px; text-align: right; border: 1px solid #ddd; }
+    .history-table td { padding: 8px; border: 1px solid #ddd; }
+    .btn-print-sm { background: #17a2b8; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+    .form-group { text-align: right; margin: 15px 0; }
+    .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+    .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 18px; }
+    .hint { color: #dc3545; font-size: 13px; }
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+    .btn-save { background: #28a745; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .debt-summary { display: flex; justify-content: space-between; align-items: center; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px 18px; margin-bottom: 15px; font-size: 17px; }
+    .debt-summary strong { color: #dc3545; }
+    .btn-print-debts { background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+</style>
+
+@code {
+    [Inject] NavigationManager Nav { get; set; } = null!;
+    protected override void OnInitialized()
+    {
+        MigrateDebtModel();
+		if (!authService.IsAdmin) { currentTab = 1; LoadPersons(); return; }
+        LoadPersons();
+    }
+
+    private int currentTab = 1; // 1=عملاء، 2=mوردين
+    private List<PersonModel> personsList = new();
+    private decimal totalDebt = 0;
+
+    private void MigrateDebtModel()
+    {
+        try
+        {
+            using var localConn = dbService.CreateLocalConnection();
+            var migrated = localConn.QueryFirstOrDefault<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'DebtBaseMigrated'");
+            if (migrated == "1") return;
+
+            using var connection = dbService.CreateConnection();
+            connection.Execute("UPDATE Persons SET Person_Debt = 0");
+            localConn.Execute("INSERT OR REPLACE INTO AppSettings (`Key`, `Value`) VALUES ('DebtBaseMigrated', '1')");
+            dbService.LogEvent("🧾 تم ترحيل نموذج الديون: أصبح Person_Debt ديناً أساسياً فقط.");
+        }
+        catch { }
+    }
+    
+    private bool showHistoryModal = false;
+    private string historyName = "";
+    private List<InvoiceModel> personInvoices = new();
+
+    private bool showPayModal = false;
+    private PersonModel? selectedPerson;
+    private decimal paymentAmount = 0;
+
+    private void SwitchTab(int tab)
+    {
+        currentTab = tab;
+        LoadPersons();
+    }
+
+    private void LoadPersons()
+    {
+        using var connection = dbService.CreateConnection();
+        personsList = connection.Query<PersonModel>(@"
+            SELECT p.Id, p.Person_Name, p.Person_Phone, p.Person_Type,
+                   p.Person_Debt + COALESCE((SELECT SUM(o.Unpaid) FROM Orders o WHERE o.Person_ID = p.Id AND o.IsDeleted = 0 AND o.Unpaid > 0 AND o.Order_Type IN (0,1,2)), 0) AS Person_Debt
+            FROM Persons p
+            WHERE p.Person_Type = @Type AND p.IsDeleted = 0 AND p.Person_Name != 'Au Comptoir'
+            ORDER BY p.Person_Name", new { Type = currentTab }).ToList();
+        totalDebt = personsList.Sum(p => p.Person_Debt);
+    }
+
+    private async Task PrintDebts()
+    {
+        using var connection = dbService.CreateConnection();
+        var data = (await connection.QueryAsync<dynamic>(@"
+            SELECT p.Person_Name, p.Person_Phone,
+                   p.Person_Debt + COALESCE((SELECT SUM(o.Unpaid) FROM Orders o WHERE o.Person_ID = p.Id AND o.IsDeleted = 0 AND o.Unpaid > 0 AND o.Order_Type IN (0,1,2)), 0) AS Debt
+            FROM Persons p
+            WHERE p.Person_Type = 1 AND p.IsDeleted = 0 AND p.Person_Name != 'Au Comptoir'
+              AND (p.Person_Debt > 0 OR EXISTS (SELECT 1 FROM Orders o WHERE o.Person_ID = p.Id AND o.Unpaid > 0 AND o.IsDeleted = 0 AND o.Order_Type IN (0,1,2)))
+            ORDER BY p.Person_Name")).ToList();
+
+        if (data.Count == 0)
+        {
+            toastService.ShowWarning("لا توجد ديون لطباعتها", "ℹ️ طباعة الديون");
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'/><title>قائمة الديون</title><style>body{font-family:Arial,sans-serif;padding:15mm;direction:rtl;}h2{text-align:center;margin:0 0 5px;}p.date{text-align:center;color:#555;margin-top:0;}table{width:100%;border-collapse:collapse;margin-top:15px;}th,td{border:1px solid #000;padding:8px;text-align:right;}th{background:#eee;}tfoot td{font-weight:bold;}</style></head><body>");
+        sb.AppendLine("<h2>قائمة ديون العملاء</h2>");
+        sb.AppendLine($"<p class='date'>التاريخ: {DateTime.Now:yyyy-MM-dd HH:mm}</p>");
+        sb.AppendLine("<table><thead><tr><th>الاسم</th><th>الهاتف</th><th>الدين (د.ج)</th><th>التوقيع</th></tr></thead><tbody>");
+        decimal total = 0;
+        foreach (dynamic d in data)
+        {
+            decimal debt = (decimal)d.Debt;
+            total += debt;
+            sb.AppendLine($"<tr><td>{d.Person_Name}</td><td>{d.Person_Phone}</td><td>{debt:0.00}</td><td></td></tr>");
+        }
+        sb.AppendLine("</tbody><tfoot><tr><td colspan='2'>الإجمالي</td><td>" + total.ToString("0.00") + "</td><td></td></tr></tfoot></table>");
+        sb.AppendLine("</body></html>");
+
+        await sysPrintService.PrintHtmlAsync(JS, sb.ToString(), false);
+    }
+
+    private async Task ViewHistory(string id, string name)
+    {
+        historyName = name;
+        using var connection = dbService.CreateConnection();
+        string sql = "SELECT * FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Order_Date DESC";
+        personInvoices = (await connection.QueryAsync<InvoiceModel>(sql, new { Id = id })).ToList();
+        showHistoryModal = true;
+    }
+
+    private void OpenPayModal(PersonModel p)
+    {
+        selectedPerson = p;
+        paymentAmount = p.Person_Debt; // افتراضياً دفع الكل
+        showPayModal = true;
+    }
+
+    private async Task ConfirmPayment()
+    {
+        if (selectedPerson == null || paymentAmount <= 0 || paymentAmount > selectedPerson.Person_Debt) return;
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // 1. توزيع المبلغ على الفواتير غير المدفوعة (أقدم فاتورة أولاً)
+            var unpaidInvoices = (await connection.QueryAsync<InvoiceModel>("SELECT * FROM Orders WHERE Person_ID = @Id AND Unpaid > 0 AND IsDeleted = 0 AND Order_Type IN (0,1,2) ORDER BY Order_Date ASC", new { Id = selectedPerson.Id }, transaction)).ToList();
+            decimal remainingPayment = paymentAmount;
+
+            foreach (var inv in unpaidInvoices)
+            {
+                if (remainingPayment <= 0) break;
+                decimal amountToPay = Math.Min(remainingPayment, inv.Unpaid);
+                await connection.ExecuteAsync("UPDATE Orders SET Paid = Paid + @Pay, Unpaid = Unpaid - @Pay WHERE Id = @Id", new { Pay = amountToPay, Id = inv.Id }, transaction);
+                remainingPayment -= amountToPay;
+            }
+
+            // 2. المبلغ المتبقي يخصم من الدين الأساسي
+            if (remainingPayment > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Persons SET Person_Debt = CASE WHEN Person_Debt >= @Amt THEN Person_Debt - @Amt ELSE 0 END WHERE Id = @Id", new { Amt = remainingPayment, Id = selectedPerson.Id }, transaction);
+            }
+
+            // 3. إضافة المال للصندوق (إذا كان عميلاً) أو خصمه من الخزنة (إذا كان موردًا)
+            if (selectedPerson.Person_Type == 1) // عميل
+            {
+                await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount + @Amt", new { Amt = paymentAmount }, transaction);
+            }
+            else // مورد
+            {
+                await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount - @Amt", new { Amt = paymentAmount }, transaction);
+            }
+
+            transaction.Commit();
+            toastService.ShowSuccessShort("تم تسديد الدين بنجاح وتحديث الفواتير!", "✅ الدفع");
+            showPayModal = false;
+            LoadPersons();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("خطأ: " + ex.Message, "❌ الدفع");
+        }
+    }
+
+    private async Task PrintInvoice(string invId)
+    {
+        // طباعة عبر قالب قابلة للتخصيص من الإعدادات
+        using var connection = dbService.CreateConnection();
+        var inv = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT o.*, p.Person_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id WHERE o.Id = @Id", new { Id = invId });
+        if (inv == null) return;
+
+        var details = await connection.QueryAsync<dynamic>(@"SELECT p.Pro_Name, od.Pro_Qty, od.Pro_Price FROM Order_Details od JOIN Products p ON od.Pro_ID = p.Id WHERE od.Order_ID = @Id", new { Id = invId });
+
+        var data = new PrintTemplateService.PrintData
+        {
+            DocType = "invoice",
+            Title = "فاتورة",
+            InvoiceNumber = invId.Substring(0, 8),
+            Date = Convert.ToDateTime(inv.Order_Date).ToString("yyyy-MM-dd HH:mm"),
+            Customer = (string)(inv.Person_Name ?? "Au Comptoir"),
+            Cashier = authService.CurrentUser?.User_FullName ?? authService.CurrentUser?.User_Name ?? "",
+            Items = details.Select(d => new PrintTemplateService.PrintItem((string)d.Pro_Name, (decimal)d.Pro_Qty, (decimal)d.Pro_Price, (decimal)(d.Pro_Qty * d.Pro_Price))).ToList(),
+            Total = (decimal)inv.Price, Paid = (decimal)inv.Paid, Debt = (decimal)inv.Unpaid
+        };
+        string html = printService.RenderFullDocument("invoice", data);
+        await sysPrintService.PrintHtmlAsync(JS, html, false);
+    }
+
+    private string GetTypeName(int type) => type switch { 0 or 1 => "بيع", 2 => "شراء", 3 => "مرتجع بيع", 4 => "مرتجع شراء", _ => "-" };
+
+    public class PersonModel
+    {
+        public string Id { get; set; } = "";
+        public string Person_Name { get; set; } = "";
+        public string? Person_Phone { get; set; }
+        public int Person_Type { get; set; }
+        public decimal Person_Debt { get; set; }
+    }
+
+    public class InvoiceModel
+    {
+        public string Id { get; set; } = "";
+        public DateTime Order_Date { get; set; }
+        public int Order_Type { get; set; }
+        public decimal Price { get; set; }
+        public decimal Paid { get; set; }
+        public decimal Unpaid { get; set; }
+    }
+}

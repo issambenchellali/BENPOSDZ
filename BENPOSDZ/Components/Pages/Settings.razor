@@ -1,0 +1,1579 @@
+@page "/settings"
+@using BENPOSDZ.Services
+@using Dapper
+@using System.Data
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject AuthService authService
+@inject ISettingsRepository settingsRepository
+@inject IApplicationStateService appState
+@inject ToastService toastService
+@inject NavigationManager Nav
+@inject PrintTemplateService printService
+@inject PrintService sysPrintService
+@inject DataTransferService dataTransferService
+@inject CloudSyncService cloudSyncService
+@inject UpdateService updateService
+
+<h2>الإعدادات العامة</h2>
+
+<div class="tabs">
+    <button class="tab-btn @(currentTab == "store" ? "active" : "")" @onclick='() => SwitchTab("store")'>🏪 المتجر</button>
+    <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
+    <button class="tab-btn @(currentTab == "print" ? "active" : "")" @onclick='() => SwitchTab("print")'>🖨️ الطباعة</button>
+    <button class="tab-btn @(currentTab == "conn" ? "active" : "")" @onclick='() => SwitchTab("conn")'>🌐 الاتصال</button>
+    <button class="tab-btn @(currentTab == "backup" ? "active" : "")" @onclick='() => SwitchTab("backup")'>💾 النسخ الاحتياطي</button>
+    <button class="tab-btn @(currentTab == "transfer" ? "active" : "")" @onclick='() => SwitchTab("transfer")'>🔄 نقل البيانات</button>
+    <button class="tab-btn @(currentTab == "log" ? "active" : "")" @onclick='() => SwitchTab("log")'>📊 السجل</button>
+    <button class="tab-btn @(currentTab == "lic" ? "active" : "")" @onclick='() => SwitchTab("lic")'>🔑 التفعيل</button>
+    <button class="tab-btn @(currentTab == "update" ? "active" : "")" @onclick='() => SwitchTab("update")'>🔁 التحديثات</button>
+</div>
+
+@if (currentTab == "store")
+{
+    <div class="settings-card">
+        <h3>معلومات المتجر</h3>
+        <div class="form-group">
+            <label>اسم المتجر (يظهر في الفواتير)</label>
+            <input type="text" @bind="settings[K_StoreName]" disabled="@isStoreNameLocked" />
+            @if (isStoreNameLocked) { <small style="color:red;">تم قفل الاسم بسبب التفعيل عبر الفلاشة</small> }
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>رقم الهاتف</label>
+                <input type="text" @bind="settings[K_StorePhone]" />
+            </div>
+            <div class="form-group">
+                <label>العنوان</label>
+                <input type="text" @bind="settings[K_StoreAddress]" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>الرقم الجبائي (NIF)</label>
+                <input type="text" @bind="settings[K_StoreNIF]" />
+            </div>
+            <div class="form-group">
+                <label>السجل التجاري (RC)</label>
+                <input type="text" @bind="settings[K_StoreRC]" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" checked="@IsCaisseVisible" @onchange="ToggleCaisseVisibility" /> 
+                السماح للبائع برؤية رصيد الصندوق (Caisse)
+            </label>
+        </div>
+        <button class="btn-save" @onclick="SaveSettings">حفظ المعلومات</button>
+    </div>
+}
+else if (currentTab == "types")
+{
+    <div class="settings-card" style="max-width: 900px;">
+        <h3>أنواع المنتجات</h3>
+        <div class="form-row" style="margin-bottom: 20px;">
+            <input type="text" @bind="newTypeName" placeholder="اسم النوع الجديد (مثال: مشروبات)" />
+            <button class="btn-save" style="width: 200px;" @onclick="AddType">إضافة</button>
+        </div>
+        <table class="mini-table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th>النوع</th>
+                    <th style="width: 90px;">المنتجات</th>
+                    <th style="width: 60px;">حذف</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in productTypes)
+                {
+                    <tr>
+                        <td><button class="type-expand-btn" @onclick="() => ToggleType(t.Id)" title="عرض منتجات هذا النوع">@(expandedTypeId == t.Id ? "▼" : "▶")</button></td>
+                        <td>@t.Type_Name</td>
+                        <td class="type-count-badge">@GetTypeProductCount(t.Id)</td>
+                        <td><button class="btn-delete" @onclick="() => DeleteType(t.Id)">🗑️</button></td>
+                    </tr>
+                    @if (expandedTypeId == t.Id)
+                    {
+                        <tr>
+                            <td colspan="4" style="padding: 0; border-bottom: none;">
+                                <div class="type-products-box">
+                                    @if (typeProductsLoading)
+                                    {
+                                        <p class="hint">جارٍ تحميل المنتجات...</p>
+                                    }
+                                    else if (typeProducts.Count == 0)
+                                    {
+                                        <p class="hint">لا توجد منتجات في هذا النوع.</p>
+                                    }
+                                    else
+                                    {
+                                        <table class="mini-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>الاسم</th>
+                                                    <th>العلامة</th>
+                                                    <th>الكمية</th>
+                                                    <th>سعر الجملة</th>
+                                                    <th>سعر التجزئة</th>
+                                                    <th>الإجراءات</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var p in typeProducts)
+                                                {
+                                                    <tr>
+                                                        <td>@p.Pro_Name</td>
+                                                        <td>@p.Pro_Mark</td>
+                                                        <td class="@(p.Pro_Qty <= p.Pro_QtyMin && p.Pro_QtyMin > 0 ? "low-stock" : "")">@p.Pro_Qty @p.Pro_Unit</td>
+                                                        <td>@p.Pro_SalePriceG د.ج</td>
+                                                        <td>@p.Pro_SalePrice_Max د.ج</td>
+                                                        <td style="white-space: nowrap;">
+                                                            <button class="btn-edit" @onclick="() => EditTypeProduct(p)">تعديل</button>
+                                                            <button class="btn-delete" @onclick="() => DeleteTypeProduct(p.Id)">حذف</button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (showTypeProductModal)
+    {
+        <div class="modal-overlay">
+            <div class="modal-box editor">
+                <h3>تعديل منتج</h3>
+                <div class="form-group">
+                    <label>اسم السلعة *</label>
+                    <input type="text" @bind="typeProductEdit.Pro_Name" placeholder="مثال: قهوة" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>العلامة التجارية</label>
+                        <input type="text" @bind="typeProductEdit.Pro_Mark" placeholder="مثال: Nescafé" />
+                    </div>
+                    <div class="form-group">
+                        <label>الخصائص</label>
+                        <input type="text" @bind="typeProductEdit.Pro_Propr" placeholder="مثال: 100غ" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>نوع المنتج</label>
+                        <select @bind="typeProductEdit.Pro_Type_ID">
+                            <option value="">-- اختر النوع --</option>
+                            @foreach (var type in productTypes)
+                            {
+                                <option value="@type.Id">@type.Type_Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>وحدة القياس</label>
+                        <input type="text" @bind="typeProductEdit.Pro_Unit" placeholder="مثال: علبة، كيلو" />
+                    </div>
+                    <div class="form-group">
+                        <label>الباركود</label>
+                        <input type="text" @bind="typeProductEdit.Pro_Barcode" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>الكمية الحالية</label>
+                        <input type="number" @bind="typeProductEdit.Pro_Qty" />
+                    </div>
+                    <div class="form-group">
+                        <label>حد التنبيه (الحد الأدنى)</label>
+                        <input type="number" @bind="typeProductEdit.Pro_QtyMin" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    @if (authService.IsAdmin)
+                    {
+                        <div class="form-group">
+                            <label>سعر الشراء (دج)</label>
+                            <input type="number" @bind="typeProductEdit.Pro_BuyPrice" />
+                        </div>
+                    }
+                    <div class="form-group">
+                        <label>سعر الجملة (دج)</label>
+                        <input type="number" @bind="typeProductEdit.Pro_SalePriceG" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>سعر التجزئة الأدنى (دج)</label>
+                        <input type="number" @bind="typeProductEdit.Pro_SalePrice_Min" />
+                    </div>
+                    <div class="form-group">
+                        <label>سعر التجزئة الأعلى (دج)</label>
+                        <input type="number" @bind="typeProductEdit.Pro_SalePrice_Max" />
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-save" @onclick="SaveTypeProduct">حفظ التعديل</button>
+                    <button class="btn-cancel-sm" @onclick="CloseTypeProductModal">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+else if (currentTab == "print")
+{
+    <style>
+        .visual-sections { display: flex; flex-direction: column; gap: 8px; margin: 15px 0; }
+        .sec-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; flex-wrap: wrap; }
+        .sec-row.disabled { opacity: 0.55; }
+        .sec-toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; flex: 1; min-width: 220px; }
+        .sec-toggle input { width: 18px; height: 18px; }
+        .sec-actions { display: flex; gap: 5px; }
+        .sec-actions button { background: #e9ecef; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; padding: 4px 8px; font-size: 14px; }
+        .sec-actions button:hover { background: #dee2e6; }
+        .sec-note-text { flex: 1 1 100%; border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; font-size: 14px; }
+        .btn-add-note { margin-top: 8px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+        .print-live-preview { border: 1px solid #ddd; border-radius: 8px; background: #fff; width: 100%; height: 480px; }
+    </style>
+
+    <div class="settings-card print-editor-card">
+        <h3>قوالب الطباعة الاحترافية</h3>
+        <p class="print-hint">اختر نوع الوثيقة، ثم أظهر/أخفِ الأقسام وأعد ترتيبها بالأزرار — القالب يُحفظ تلقائياً وتظهر المعاينة مباشرة.</p>
+
+        <div class="form-group" style="margin-bottom:15px;">
+            <label>
+                <input type="checkbox" checked="@IsSellNoPrint" @onchange="ToggleSellNoPrint" />
+                🛑 البيع بدون طباعة — لا يُطلب طباعة الوصل بعد إتمام البيع، وتظهر رسالة "شكراً على الشراء" تلقائياً وتختفي بسرعة
+            </label>
+        </div>
+
+        <div class="print-types">
+            <button type="button" class="print-type-btn @(templateDocType == "invoice" ? "active" : "")" @onclick='() => SwitchTemplateType("invoice")'>📄 فاتورة (A4)</button>
+            <button type="button" class="print-type-btn @(templateDocType == "delivery" ? "active" : "")" @onclick='() => SwitchTemplateType("delivery")'>🚚 بون تسليم (BL)</button>
+            <button type="button" class="print-type-btn @(templateDocType == "receipt" ? "active" : "")" @onclick='() => SwitchTemplateType("receipt")'>🧾 وصل (80mm)</button>
+        </div>
+
+        <div class="visual-sections">
+            @for (int i = 0; i < currentLayout.Sections.Count; i++)
+            {
+                var s = currentLayout.Sections[i];
+                int idx = i;
+                <div class="sec-row @(s.Enabled ? "" : "disabled")">
+                    <label class="sec-toggle">
+                        <input type="checkbox" @bind="s.Enabled" @bind:after="SaveLayoutNow" />
+                        <span>@SectionTitle(s.Type)</span>
+                    </label>
+                    <div class="sec-actions">
+                        <button @onclick="() => MoveSection(idx, -1)" title="تحريك لأعلى">⬆</button>
+                        <button @onclick="() => MoveSection(idx, 1)" title="تحريك لأسفل">⬇</button>
+                        <button @onclick="() => DeleteSection(s)" title="حذف هذا القسم">🗑️</button>
+                    </div>
+                    @if (s.Type == "note" || s.Type == "header" || s.Type == "footer" || s.Type == "title")
+                    {
+                        <input class="sec-note-text" @bind="s.Text" @bind:event="oninput" @bind:after="SaveLayoutNow" placeholder="@SectionTextPlaceholder(s.Type)" />
+                    }
+                </div>
+            }
+        </div>
+        <button class="btn-add-note" @onclick="AddNote">➕ إضافة ملاحظة مخصصة</button>
+
+        <div class="form-group" style="margin-top:15px;">
+            <label>المعاينة الحية (ببيانات تجريبية):</label>
+            <iframe class="print-live-preview" srcdoc="@previewHtml"></iframe>
+        </div>
+
+        <div class="form-group" style="margin-top:15px;">
+            <label>نص الرأس (يظهر عبر قسم "نص الرأس")</label>
+            <textarea @bind="settings[K_ReceiptHeader]" rows="2" placeholder="مرحباً بكم في متجرنا"></textarea>
+        </div>
+        <div class="form-group">
+            <label>نص التذييل (يظهر عبر قسم "نص التذييل")</label>
+            <textarea @bind="settings[K_ReceiptFooter]" rows="2" placeholder="شكراً لزيارتكم — لا ترد بعد هذا اليوم"></textarea>
+        </div>
+
+        <div class="print-actions">
+            <button class="btn-save" @onclick="SaveTemplateNow">💾 حفظ القالب</button>
+            <button class="btn-save" style="background:#6c757d;" @onclick="ResetTemplateNow">♻️ استعادة الافتراضي</button>
+            <button class="btn-save" style="background:#28a745;" @onclick="PrintTest">🖨️ طباعة تجريبية</button>
+            <button class="btn-save" style="background:#6f42c1;" @onclick="ShareTest">📤 مشاركة المعاينة</button>
+            <button class="btn-save" style="background:#fd7e14;" @onclick="ExportWord">📄 تصدير Word</button>
+            <button class="btn-save" style="background:#17a2b8;" @onclick="SaveSettings">حفظ الرأس/التذييل</button>
+        </div>
+    </div>
+}
+else if (currentTab == "conn")
+{
+    <div class="settings-card">
+        <h3>إعدادات الاتصال وقاعدة البيانات</h3>
+        <div class="form-group">
+            <label>وضع قاعدة البيانات</label>
+            <select @bind="settings[K_DBMode]" class="form-control">
+                <option value="Local">محلي (SQLite) - جهاز واحد</option>
+                <option value="LAN">شبكة محلية (MySQL) - عدة أجهزة</option>
+            </select>
+        </div>
+        @if (settings.ContainsKey(K_DBMode) && settings[K_DBMode] == "LAN")
+        {
+            <div class="form-group">
+                <label>عنوان خادم MySQL (Host أو IP)</label>
+                <div class="host-row">
+                    <input type="text" @bind="settings[K_MySQL_Host]" placeholder="مثال: server-pos أو 192.168.1.10" />
+                    <button type="button" class="btn-save" style="background:#17a2b8; margin-top:0; white-space:nowrap;" @onclick="DiscoverServers" disabled="@isDiscovering">🔍 اكتشاف الخادم</button>
+                </div>
+                @if (isDiscovering) { <small style="color:#007bff;">جاري فحص الشبكة المحلية... قد يستغرق ثواني</small> }
+                @if (discoveredServers.Any())
+                {
+                    <div class="discovered-box">
+                        <small style="color:#666;">الخوادم المكتشفة (اضغط على أي خادم لاختياره):</small>
+                        @foreach (var s in discoveredServers)
+                        {
+                            <button type="button" class="discovered-item" @onclick="() => SelectDiscoveredServer(s)">🖥️ @s</button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>اسم المستخدم</label><input type="text" @bind="settings[K_MySQL_User]" /></div>
+                <div class="form-group"><label>كلمة المرور</label><input type="password" @bind="settings[K_MySQL_Pass]" /></div>
+            </div>
+        }
+        <hr />
+        <div class="form-group">
+            <label>تفعيل المزامنة السحابية (Supabase)</label>
+            <select @bind="settings[K_CloudSyncEnabled]" class="form-control">
+                <option value="false">معطلة</option>
+                <option value="true">مفعلة</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Supabase URL</label>
+            <input type="text" @bind="settings[K_SupabaseURL]" />
+        </div>
+        <div class="form-group">
+            <label>Supabase Key (تُعرض مخفية لأمان أكبر)</label>
+            <input type="password" @bind="settings[K_SupabaseKey]" autocomplete="new-password" />
+            <small style="color:#666;">المفتاح محفوظ في قاعدة البيانات المحلية ولا يظهر إلا عند إعادة كتابته.</small>
+        </div>
+
+        <div class="form-group">
+            <label>حالة الاتصال الحالية:</label>
+            <input type="text" value="@appState.ConnectionStatus" readonly class="form-control" style="font-weight: bold; background: #f8f9fa;" />
+        </div>
+
+        <div class="form-group">
+            <label>أدوات المزامنة السحابية:</label>
+            <div class="backup-row">
+                <button class="btn-save" style="background:#17a2b8;" @onclick="SyncNow" disabled="@isSyncing">
+                    ⬆️ @(isSyncing ? "جاري الرفع..." : "رفع كل البيانات إلى Supabase")
+                </button>
+                <button class="btn-save" style="background:#28a745;" @onclick="PullNow" disabled="@isSyncing">
+                    ⬇️ @(isSyncing ? "جاري السحب..." : "سحب كل البيانات من Supabase")
+                </button>
+            </div>
+            <small style="color:#666;">السحب يدمج سجلات Supabase في القاعدة المحلية (آخر تعديل يفوز) ويستخدم للاستعادة من نسخة سحابية.</small>
+        </div>
+
+        <button class="btn-save" @onclick="SaveSettings">حفظ إعدادات الاتصال</button>
+    </div>
+}
+else if (currentTab == "backup")
+{
+    <div class="settings-card">
+        <h3>النسخ الاحتياطي والصيانة</h3>
+        <div class="form-group">
+            <label>النسخ الاحتياطي والاستعادة:</label>
+            <div class="backup-row">
+                <button class="btn-save" style="background: #17a2b8;" @onclick="BackupNow">💾 إنشاء نسخة احتياطية</button>
+                <button class="btn-save" style="background: #fd7e14;" @onclick="RestoreNow">♻️ استعادة أحدث نسخة</button>
+            </div>
+            @if (!string.IsNullOrEmpty(lastBackupPath))
+            {
+                <small style="color:#666; word-break:break-all;">آخر نسخة: @lastBackupPath</small>
+            }
+        </div>
+        <hr />
+        <div class="form-group">
+            <label>صيانة قاعدة البيانات:</label>
+            <button class="btn-save" style="background: #ffc107; color: black;" @onclick="CleanData">
+                🧹 تنظيف البيانات من الفواصل العشرية الخاطئة
+            </button>
+        </div>
+        <hr />
+        <div class="form-group">
+            <label>فحص دقة الحسابات المالية:</label>
+            <p style="color:#666; font-size:13px;">
+                يتحقق من مطابقة تفاصيل الفواتير مع الإجماليات، وصحة المدفوعات والديون، ويحسب إجمالي المبيعات والمشتريات.
+            </p>
+            <button class="btn-save" style="background: #6f42c1;" @onclick="RunAudit" disabled="@isAuditing">
+                🧾 @(isAuditing ? "جاري التدقيق..." : "فحص دقة الحسابات المالية")
+            </button>
+        </div>
+        <hr />
+        <div class="form-group danger-zone">
+            <label style="color:#dc3545; font-size:18px;">🧨 منطقة الخطر — محو العمليات المالية</label>
+            <p style="color:#dc3545; font-size:13px; margin:5px 0;">
+                سيتم حذف <strong>جميع الفواتير والمرتجعات والمصاريف</strong> وتصفير <strong>الصندوق</strong> و<strong>ديون الزبائن</strong>.
+                ستبقى المنتجات والأشخاص والمستخدمون والإعدادات كما هي.
+            </p>
+            <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;">
+                <input type="checkbox" @bind="wipeResetStock" style="width:auto;" />
+                إعادة تعيين أرصدة المخزون (Pro_Qty) إلى صفر أيضاً
+            </label>
+            <button class="btn-save btn-wipe" @onclick="WipeFinancialData" style="background:#dc3545; margin-top:10px;">
+                🧨 محو كل العمليات المالية نهائياً
+            </button>
+        </div>
+    </div>
+}
+else if (currentTab == "transfer")
+{
+    <div class="settings-card">
+        <h3>🔄 نقل البيانات بين القواعد</h3>
+        <p style="color:#666; font-size:13px;">
+            انقل كل البيانات التجارية (المنتجات، الأشخاص، الفواتير، المصاريف، الأنواع، الصندوق) من SQLite المحلي إلى MySQL أو العكس.
+            التحويل يستبدل بيانات الوجهة بالكامل. تأكد من أن الخادم قيد التشغيل قبل النقل.
+        </p>
+
+        <div class="form-group">
+            <label>من SQLite (محلي) إلى MySQL (الخادم):</label>
+            <button class="btn-save" style="background:#28a745;" @onclick="TransferToMySql" disabled="@isTransferring">
+                ➡️ @(isTransferring ? "جاري النقل..." : "نقل كل البيانات إلى MySQL")
+            </button>
+        </div>
+        <hr />
+        <div class="form-group">
+            <label>من MySQL (الخادم) إلى SQLite (محلي):</label>
+            <button class="btn-save" style="background:#17a2b8;" @onclick="TransferToSqlite" disabled="@isTransferring">
+                ⬅️ @(isTransferring ? "جاري النقل..." : "نقل كل البيانات إلى SQLite")
+            </button>
+        </div>
+        <hr />
+        <div class="form-group danger-zone">
+            <label style="color:#dc3545; font-size:16px;">🗑️ تفريغ Supabase</label>
+            <p style="color:#dc3545; font-size:13px; margin:5px 0;">
+                مسح <strong>كل الجداول البعيدة في Supabase</strong> (المنتجات، الأشخاص، الفواتير، المصاريف) لتجنب أي خلط في البيانات،
+                دون التأثير على القاعدة المحلية. ستُعاد المزامنة من الصفر بعدها.
+            </p>
+            <button class="btn-save" style="background:#dc3545;" @onclick="ClearSupabase" disabled="@isTransferring">
+                🗑️ @(isTransferring ? "جاري التفريغ..." : "تفريغ كل جداول Supabase")
+            </button>
+        </div>
+    </div>
+}
+else if (currentTab == "log")
+{
+    <div class="settings-card">
+        <h3>سجل النظام (System Log)</h3>
+        <p style="color:#666; font-size:13px;">سجل العمليات والأخطاء الخلفية — يُحفظ في ملف System.log داخل مجلد البرنامج.</p>
+        <p style="font-size:13px;">
+            ⚡ أداء الاستعلامات: <strong>@QueryProfiler.SlowQueryCount</strong> استعلام بطيء (+400ms) في هذه الجلسة —
+            الاستعلامات البطيئة تُسجل أدناه برسالة ⚠️ (تُستخدم لفحص أداء وضع LAN على MySQL).
+        </p>
+        <div class="log-actions">
+            <button class="btn-save" style="background:#17a2b8; margin-top:0;" @onclick="RefreshLog">🔄 تحديث</button>
+            <button class="btn-save" style="background:#6c757d; margin-top:0;" @onclick="dbService.OpenLogFolder">📂 فتح مجلد السجلات</button>
+            <button class="btn-save" style="background:#dc3545; margin-top:0;" @onclick="ClearSystemLog">🗑️ مسح السجل</button>
+        </div>
+        <div class="form-group">
+            <label>سجل العمليات الخلفية:</label>
+            <textarea rows="18" readonly class="form-control" style="font-family: monospace; font-size: 12px; background: #1e293b; color: #94a3b8;">@dbService.SystemLog</textarea>
+        </div>
+    </div>
+}
+else if (currentTab == "lic")
+{
+    <div class="settings-card" style="text-align: center;">
+        <h3>التفعيل وإدارة الترخيص</h3>
+        @if (isLicensed)
+        {
+            <p style="color: green; font-size: 20px; font-weight: bold;">✅ البرنامج مُفعل</p>
+            <p>تاريخ انتهاء الترخيص الحالي: <strong>@settings[K_LicenseExpiryDate]</strong></p>
+        }
+        else
+        {
+            <p style="color: red; font-size: 20px; font-weight: bold;">⏳ انتهت النسخة التجريبية</p>
+        }
+
+        <hr />
+        <h4>طريقة 1: تفعيل بكود سري (سنة واحدة)</h4>
+        <div class="machine-id-box">
+            <label>رقم الجهاز (Machine ID):</label>
+            <h2 style="color: #007bff; letter-spacing: 2px;">@machineId</h2>
+        </div>
+        <div class="form-group">
+            <input type="text" @bind="enteredLicenseKey" placeholder="000000" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 5px;" />
+        </div>
+        <button class="btn-save" @onclick="ActivateWithCode">تفعيل بالكود</button>
+
+        <hr style="margin: 30px 0;" />
+        <h4>طريقة 2: تفعيل بفلاشة المفاتيح (3 سنوات / 5 أجهزة)</h4>
+        <p style="font-size: 12px; color: #666;">أدخل اسم المتجر بدقة كما تم تسجيله في المفتاح، ثم وصل الفلاشة واضغط تفعيل. (سيتم قفل اسم المتجر).</p>
+        <div class="form-group">
+            <input type="text" @bind="usbStoreName" placeholder="اسم المتجر المسجل في المفتاح" />
+        </div>
+        <button class="btn-save" style="background: #28a745;" @onclick="ActivateWithUsb">🔓 تفعيل بالفلاشة</button>
+
+        <hr style="margin: 30px 0;" />
+        <h4>🔑 مفتاح التفعيل (سر التفعيل)</h4>
+        <p style="font-size: 12px; color: #666;">
+            يستخدم لتوليد أكواد التفعيل. عند تغييره تصبح الأكواد القديمة غير صالحة، لذا غيّره فقط عند الرغبة في إلغاء تفعيلات سابقة.
+        </p>
+        <div class="form-group">
+            <input type="text" @bind="activationSecret" placeholder="أدخل سر التفعيل الجديد (يُستخدم الافتراضي إن تُرك فارغاً)" />
+            <small style="color: #666;">الحالي: @(hasCustomActivationSecret ? "مخصص (محفوظ محلياً)" : "افتراضي")</small>
+        </div>
+        <button class="btn-save" style="background: #6f42c1;" @onclick="SaveActivationSecret">💾 حفظ مفتاح التفعيل</button>
+
+        <hr style="margin: 30px 0;" />
+        <h4>تحديث البرنامج</h4>
+        <button class="btn-save" style="background: #17a2b8;" @onclick='() => SwitchTab("update")'>🔄 الانتقال لإعدادات التحديثات</button>
+    </div>
+}
+else if (currentTab == "update")
+{
+    <div class="settings-card" style="max-width: 700px;">
+        <h3>🔁 التحديثات</h3>
+        <p class="print-hint">الإصدار الحالي: <strong>@currentAppVersion</strong></p>
+
+        <div class="form-group">
+            <label>رابط مستودع GitHub للتحديثات</label>
+            <input type="text" @bind="updateRepoUrl" placeholder="https://github.com/owner/repo" />
+            <small style="color:#666;">يُرفع عليه ملفا <code>version.json</code> وحزمة التحديث في كل Release جديد.</small>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" @bind="updateCheckOnStart" /> الفحص التلقائي عند إقلاع البرنامج
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" @bind="updateCheckPeriodic" /> فحص دوري كل 24 ساعة أثناء التشغيل
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" @bind="updateAutoDownload" /> تنزيل التحديث تلقائياً عند توفره
+            </label>
+        </div>
+        <button class="btn-save" @onclick="SaveUpdateSettings">💾 حفظ إعدادات التحديث</button>
+        <button class="btn-save" style="background:#17a2b8;" @onclick="CheckForUpdates" disabled="@updateService.IsBusy">
+            @(updateService.IsBusy ? "جارٍ الفحص..." : "🔄 التحقق من التحديثات الآن")
+        </button>
+
+        @if (updateService.PendingUpdate != null)
+        {
+            <div class="update-info-box">
+                <strong>✅ تحديث متوفر: v@(updateService.PendingUpdate.version)</strong>
+                <div class="update-notes">@updateService.PendingUpdate.notes</div>
+                <button class="btn-save" style="background:#28a745;" @onclick="StartUpdateDownload" disabled="@updateService.IsBusy">📥 تنزيل وتحديث الآن</button>
+            </div>
+        }
+        else if (updateLastCheck != null)
+        {
+            <div class="update-info-box" style="border-color:#ccc; background:#f9f9f9;">
+                <strong>✅ أنت تستخدم أحدث إصدار</strong>
+                <small class="print-hint">آخر فحص: @updateLastCheck</small>
+            </div>
+        }
+
+        @if (downloadInProgress)
+        {
+            <div style="margin-top:15px;">
+                <div class="progress"><div class="progress-bar" style="width:@(downloadPct)%;"></div></div>
+                <p class="print-hint">@downloadStatus</p>
+            </div>
+        }
+    </div>
+}
+
+@if (showAuditModal && auditResult != null)
+{
+    <div class="modal-overlay">
+        <div class="modal-box">
+            <h3>نتيجة فحص دقة الحسابات المالية</h3>
+            <p>
+                عدد الفواتير المفحوصة: <strong>@auditResult.InvoicesChecked</strong> |
+                إجمالي المبيعات: <strong>@auditResult.SalesTotal.ToString("0.00") د.ج</strong> |
+                إجمالي المشتريات: <strong>@auditResult.PurchaseTotal.ToString("0.00") د.ج</strong>
+            </p>
+            <div class="audit-results">
+                @foreach (var issue in auditResult.Issues)
+                {
+                    <div class="audit-line @(issue.StartsWith("✅") ? "ok" : "err")">@issue</div>
+                }
+            </div>
+            <button class="btn-cancel" @onclick="CloseAuditModal" style="width:100%">إغلاق</button>
+        </div>
+    </div>
+}
+
+<style>
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; flex-wrap: wrap; }
+    .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
+    .tab-btn.active { color: #007bff; border-bottom: 3px solid #007bff; }
+    .host-row { display: flex; gap: 10px; }
+    .host-row input { flex: 1; }
+    .discovered-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .discovered-item { background: #eef6ff; border: 1px solid #007bff; color: #007bff; border-radius: 8px; padding: 6px 12px; font-weight: bold; cursor: pointer; }
+    .discovered-item:hover { background: #007bff; color: white; }
+    .log-actions { display: flex; gap: 10px; margin-bottom: 15px; }
+    .log-actions .btn-save { flex: 1; }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+    .modal-box { background: white; padding: 25px; border-radius: 10px; width: 640px; max-width: 90vw; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; text-align: center; }
+    .audit-results { text-align: right; max-height: 300px; overflow-y: auto; background: #f8f9fa; border-radius: 6px; padding: 10px; }
+    .audit-line { padding: 6px; border-bottom: 1px solid #eee; font-size: 13px; }
+    .audit-line.ok { color: #28a745; }
+    .audit-line.err { color: #dc3545; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; }
+    .settings-card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: 600px; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
+    .form-row { display: flex; gap: 15px; }
+    .form-row .form-group { flex: 1; }
+    .btn-save { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+    .btn-delete { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    .mini-table { width: 100%; border-collapse: collapse; }
+    .mini-table td { padding: 10px; border-bottom: 1px solid #eee; }
+    .mini-table th { padding: 10px; border-bottom: 2px solid #e0e0e0; background: #f8f9fa; font-size: 13px; text-align: right; }
+    .type-expand-btn { background: #e9ecef; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; padding: 4px 8px; font-size: 13px; }
+    .type-expand-btn:hover { background: #dee2e6; }
+    .type-count-badge { color: #007bff; font-size: 12px; font-weight: bold; }
+    .type-products-box { background: #f8f9fa; border-radius: 8px; padding: 12px; margin: 4px 0; }
+    .type-products-box .mini-table td { border-bottom: 1px solid #e0e0e0; }
+    .btn-edit { background: #ffc107; color: black; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    .low-stock { color: #dc3545; font-weight: bold; }
+    .hint { color: #6c757d; font-size: 13px; }
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 15px; }
+    .modal-box.editor { text-align: right; }
+    .modal-box.editor select { font-family: inherit; }
+    .btn-cancel-sm { background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+    .machine-id-box { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; border: 2px dashed #007bff; }
+    .backup-row { display: flex; gap: 10px; }
+    .backup-row .btn-save { flex: 1; }
+    .danger-zone { border: 2px dashed #dc3545; border-radius: 8px; padding: 12px; }
+    .print-editor-card { max-width: 1100px; }
+    .print-hint { color: #666; font-size: 13px; }
+    .print-types { display: flex; gap: 10px; margin: 10px 0; }
+    .print-type-btn { padding: 8px 16px; border: 2px solid #e2e8f0; background: #fff; border-radius: 8px; cursor: pointer; font-weight: bold; color: #64748b; }
+    .print-type-btn.active { border-color: #007bff; background: #eef6ff; color: #007bff; }
+    .ph-palette { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+    .ph-palette-title { font-size: 13px; color: #555; font-weight: bold; }
+    .ph-chip { background: #eef6ff; border: 1px solid #007bff; color: #007bff; border-radius: 12px; padding: 4px 10px; font-size: 12px; cursor: grab; user-select: none; }
+    .ph-chip:hover { background: #007bff; color: white; }
+    .print-editor-grid { display: flex; gap: 15px; }
+    .print-editor-col { flex: 1; display: flex; flex-direction: column; }
+    .print-editor-col label { font-weight: bold; margin-bottom: 5px; }
+    .template-editor { width: 100%; font-family: Consolas, monospace; font-size: 12px; direction: ltr; text-align: left; border: 1px solid #ccc; border-radius: 5px; padding: 8px; box-sizing: border-box; }
+    .template-preview { width: 100%; height: 520px; border: 1px solid #ccc; border-radius: 5px; background: white; }
+    .print-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .update-info-box { background: #eef6ff; border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: right; }
+    .update-info-box strong { font-size: 16px; color: #155724; }
+    .update-notes { background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; margin: 10px 0; font-size: 13px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+    .progress { width: 100%; height: 14px; background: #e9ecef; border-radius: 7px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #28a745; transition: width 0.2s; }
+</style>
+
+@code {
+    private string currentTab = "store";
+    private Dictionary<string, string> settings = new Dictionary<string, string>();
+    private List<ProductTypeModel> productTypes = new List<ProductTypeModel>();
+    private string newTypeName = "";
+    private Dictionary<string, int> typeProductCounts = new Dictionary<string, int>();
+    private string expandedTypeId = "";
+    private bool typeProductsLoading = false;
+    private List<TypeProductModel> typeProducts = new List<TypeProductModel>();
+    private bool showTypeProductModal = false;
+    private TypeProductEditModel typeProductEdit = new TypeProductEditModel();
+
+    private bool isLicensed = false;
+    private int daysLeft = 0;
+    private string enteredLicenseKey = "";
+    private string machineId = "";
+    private string activationSecret = "";
+    private bool hasCustomActivationSecret = false;
+    private string usbStoreName = "";
+    private bool isStoreNameLocked = false;
+
+    private const string K_StoreName = "StoreName";
+    private const string K_StorePhone = "StorePhone";
+    private const string K_StoreAddress = "StoreAddress";
+    private const string K_StoreNIF = "StoreNIF";
+    private const string K_StoreRC = "StoreRC";
+    private const string K_ReceiptHeader = "ReceiptHeader";
+    private const string K_ReceiptFooter = "ReceiptFooter";
+    private const string K_DBMode = "DBMode";
+    private const string K_MySQL_Host = "MySQL_Host";
+    private const string K_MySQL_User = "MySQL_User";
+    private const string K_MySQL_Pass = "MySQL_Pass";
+    private const string K_CloudSyncEnabled = "CloudSyncEnabled";
+    private const string K_SupabaseURL = "SupabaseURL";
+    private const string K_SupabaseKey = "SupabaseKey";
+    private const string K_LicenseExpiryDate = "LicenseExpiryDate";
+    private const string K_TrialStartDate = "TrialStartDate";
+    private const string K_StoreNameLocked = "StoreNameLocked";
+    private const string K_ShowCaisseToVendeur = "ShowCaisseToVendeur";
+    private const string K_SellNoPrint = "SellNoPrint";
+    private string lastBackupPath = "";
+    private bool wipeResetStock = false;
+
+    private string currentAppVersion = "";
+    private string updateRepoUrl = "";
+    private bool updateCheckOnStart = false;
+    private bool updateCheckPeriodic = true;
+    private bool updateAutoDownload = false;
+    private string? updateLastCheck = null;
+    private bool downloadInProgress = false;
+    private double downloadPct = 0;
+    private string downloadStatus = "";
+
+    private bool isDiscovering = false;
+    private List<string> discoveredServers = new List<string>();
+    private bool isAuditing = false;
+    private FinancialAuditResult? auditResult = null;
+    private bool showAuditModal = false;
+    private bool isTransferring = false;
+
+    private async Task TransferToMySql()
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "سيتم استبدال كل البيانات في MySQL (الخادم) ببيانات SQLite المحلية. متابعة؟");
+        if (!confirm) return;
+        isTransferring = true;
+        try
+        {
+            int count = await dataTransferService.TransferSqliteToMySqlAsync();
+            toastService.ShowSuccess($"تم نقل {count} سجل من SQLite إلى MySQL", "✅ نقل إلى MySQL");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل النقل إلى MySQL: " + ex.Message, "❌ نقل إلى MySQL");
+        }
+        finally { isTransferring = false; }
+    }
+
+    private async Task TransferToSqlite()
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "سيتم استبدال كل البيانات في SQLite المحلي ببيانات MySQL (الخادم). متابعة؟");
+        if (!confirm) return;
+        isTransferring = true;
+        try
+        {
+            int count = await dataTransferService.TransferMySqlToSqliteAsync();
+            toastService.ShowSuccess($"تم نقل {count} سجل من MySQL إلى SQLite", "✅ نقل إلى SQLite");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل النقل إلى SQLite: " + ex.Message, "❌ نقل إلى SQLite");
+        }
+        finally { isTransferring = false; }
+    }
+
+    private async Task ClearSupabase()
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "سيتم مسح كل البيانات في Supabase نهائياً. متابعة؟");
+        if (!confirm) return;
+        isTransferring = true;
+        try
+        {
+            await cloudSyncService.ClearSupabaseAsync();
+            toastService.ShowSuccess("تم تفريغ كل جداول Supabase", "🗑️ تفريغ Supabase");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل تفريغ Supabase: " + ex.Message, "❌ تفريغ Supabase");
+        }
+        finally { isTransferring = false; }
+    }
+
+    private bool isSyncing = false;
+
+    private async Task SyncNow()
+    {
+        isSyncing = true;
+        try
+        {
+            await cloudSyncService.SyncAllAsync();
+            toastService.ShowSuccess("تم رفع كل البيانات إلى Supabase بنجاح", "⬆️ مزامنة");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الرفع: " + ex.Message, "❌ مزامنة");
+        }
+        finally { isSyncing = false; }
+    }
+
+    private async Task PullNow()
+    {
+        isSyncing = true;
+        try
+        {
+            int count = await cloudSyncService.PullFromSupabaseAsync();
+            toastService.ShowSuccess($"تم سحب {count} سجل من Supabase", "⬇️ سحب");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل السحب: " + ex.Message, "❌ سحب");
+        }
+        finally { isSyncing = false; }
+    }
+
+    private string templateDocType = "invoice";
+    private PrintTemplateService.TemplateLayout currentLayout = new();
+    private string previewHtml = "";
+
+    private static readonly Dictionary<string, string> SectionTitles = new()
+    {
+        ["store"] = "🏪 شريط المتجر",
+        ["title"] = "📌 عنوان الوثيقة",
+        ["meta"] = "🧾 رقم / تاريخ / زبون",
+        ["items"] = "📋 جدول الأصناف",
+        ["totals"] = "💵 الإجماليات (المجموع / المدفوع / الدين)",
+        ["signatures"] = "✍️ التواقيع (البائع / الزبون)",
+        ["header"] = "🗣️ نص الرأس",
+        ["footer"] = "🙏 نص التذييل",
+        ["note"] = "📝 ملاحظة مخصصة"
+    };
+
+    private static string SectionTitle(string type) => SectionTitles.ContainsKey(type) ? SectionTitles[type] : type;
+
+    private void SwitchTemplateType(string type)
+    {
+        templateDocType = type;
+        currentLayout = printService.GetLayout(type);
+        RefreshPreview();
+    }
+
+    private void RefreshPreview()
+    {
+        previewHtml = printService.RenderLayout(templateDocType, currentLayout, BuildSampleData());
+    }
+
+    private PrintTemplateService.PrintData BuildSampleData()
+    {
+        string title = templateDocType switch { "invoice" => "فاتورة", "delivery" => "بون تسليم", "receipt" => "وصل", _ => "وثيقة" };
+        var data = new PrintTemplateService.PrintData
+        {
+            DocType = templateDocType,
+            Title = title,
+            InvoiceNumber = "000001",
+            Date = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+            Customer = "زبون تجريبي",
+            Cashier = "المدير",
+            Items = new List<PrintTemplateService.PrintItem>
+            {
+                new("منتج تجريبي 1", 2, 1500, 3000),
+                new("منتج تجريبي 2", 1, 750.50m, 750.50m)
+            },
+            Total = 3750.50m,
+            Paid = 3000,
+            Debt = 750.50m
+        };
+        // ملء بيانات المتجر والرأس/التذييل من الإعدادات لعرضها في المعاينة
+        return printService.LoadStoreDefaults(data);
+    }
+
+    private void SaveLayoutNow()
+    {
+        printService.SaveLayout(templateDocType, currentLayout);
+        RefreshPreview();
+    }
+
+    private void SaveTemplateNow()
+    {
+        try
+        {
+            printService.SaveLayout(templateDocType, currentLayout);
+            toastService.ShowSuccess("تم حفظ قالب الطباعة بنجاح", "✅ حفظ القالب");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الحفظ: " + ex.Message, "❌ حفظ القالب");
+        }
+    }
+
+    private void MoveSection(int index, int delta)
+    {
+        var list = currentLayout.Sections;
+        int newIndex = index + delta;
+        if (newIndex < 0 || newIndex >= list.Count) return;
+        var item = list[index];
+        list.RemoveAt(index);
+        list.Insert(newIndex, item);
+        SaveLayoutNow();
+    }
+
+    private void AddNote()
+    {
+        currentLayout.Sections.Add(new PrintTemplateService.TemplateSection { Type = "note", Enabled = true, Text = "" });
+        SaveLayoutNow();
+    }
+
+    private void DeleteSection(PrintTemplateService.TemplateSection section)
+    {
+        if (currentLayout.Sections.Count <= 1)
+        {
+            toastService.ShowWarning("لا يمكن حذف آخر قسم متبقٍ في القالب.", "⚠️ حذف قسم");
+            return;
+        }
+        currentLayout.Sections.Remove(section);
+        SaveLayoutNow();
+    }
+
+    private static string SectionTextPlaceholder(string type) => type switch
+    {
+        "title" => "نص العنوان (اتركه فارغاً لاستخدام الافتراضي)",
+        "header" => "نص الرأس (اتركه فارغاً لاستخدام نص الرأس من الإعدادات)",
+        "footer" => "نص التذييل (اتركه فارغاً لاستخدام نص التذييل من الإعدادات)",
+        _ => "نص الملاحظة (مثال: لا تُرد البضاعة المباعة)"
+    };
+
+    private void ResetTemplateNow()
+    {
+        printService.ResetLayout(templateDocType);
+        currentLayout = printService.GetLayout(templateDocType);
+        RefreshPreview();
+        toastService.ShowSuccess("تمت استعادة القالب الافتراضي", "♻️ استعادة القالب");
+    }
+
+    private async Task PrintTest()
+    {
+        await sysPrintService.PrintHtmlAsync(JS, printService.RenderLayout(templateDocType, currentLayout, BuildSampleData()), templateDocType == "receipt");
+    }
+
+    private async Task ShareTest()
+    {
+        string title = $"معاينة {templateDocType}";
+        await sysPrintService.ShareHtmlAsync(JS, printService.RenderLayout(templateDocType, currentLayout, BuildSampleData()), title);
+        toastService.ShowSuccess("تمت المشاركة", "📤 مشاركة");
+    }
+
+    private async Task ExportWord()
+    {
+        string html = printService.RenderLayout(templateDocType, currentLayout, BuildSampleData());
+        string filename = $"doc_{templateDocType}.doc";
+        await JS.InvokeVoidAsync("downloadDoc", html, filename);
+        toastService.ShowSuccess("تم تصدير المعاينة كملف Word", "📄 تصدير Word");
+    }
+
+    private bool IsCaisseVisible => settings.ContainsKey(K_ShowCaisseToVendeur) && settings[K_ShowCaisseToVendeur] == "true";
+
+    private bool IsSellNoPrint => settings.ContainsKey(K_SellNoPrint) && settings[K_SellNoPrint] == "true";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!authService.IsAdmin) { Nav.NavigateTo("/pos"); return; }
+        await LoadSettings();
+        await LoadProductTypes();
+        CheckLicenseStatus();
+        machineId = authService.GetMachineId();
+        hasCustomActivationSecret = authService.HasCustomActivationSecret(dbService);
+        usbStoreName = settings.ContainsKey(K_StoreName) ? settings[K_StoreName] : "";
+        isStoreNameLocked = settings.ContainsKey(K_StoreNameLocked) && settings[K_StoreNameLocked] == "true";
+        LoadUpdateSettings();
+    }
+
+    private void LoadUpdateSettings()
+    {
+        currentAppVersion = updateService.CurrentVersionString;
+        updateRepoUrl = updateService.RepoUrl;
+        updateCheckOnStart = updateService.CheckOnStart;
+        updateCheckPeriodic = updateService.CheckPeriodic;
+        updateAutoDownload = updateService.AutoDownload;
+        var last = updateService.LastUpdateCheckUtc;
+        updateLastCheck = last > DateTime.MinValue ? last.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : null;
+    }
+
+    private void SaveUpdateSettings()
+    {
+        try
+        {
+            using var conn = dbService.CreateLocalConnection();
+            void Set(string key, string value) =>
+                conn.Execute("UPDATE AppSettings SET `Value` = @V WHERE `Key` = @K; INSERT INTO AppSettings (`Key`,`Value`) SELECT @K, @V WHERE (SELECT COUNT(*) FROM AppSettings WHERE `Key` = @K) = 0",
+                    new { V = value, K = key });
+            Set(UpdateService.K_UpdateRepoUrl, updateRepoUrl?.Trim() ?? "");
+            Set(UpdateService.K_UpdateCheckOnStart, updateCheckOnStart ? "true" : "false");
+            Set(UpdateService.K_UpdateCheckPeriodic, updateCheckPeriodic ? "true" : "false");
+            Set(UpdateService.K_UpdateAutoDownload, updateAutoDownload ? "true" : "false");
+            toastService.ShowSuccess("تم حفظ إعدادات التحديث", "💾 التحديثات");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الحفظ: " + ex.Message, "❌ التحديثات");
+        }
+    }
+
+    private async Task StartUpdateDownload()
+    {
+        if (updateService.PendingUpdate == null) return;
+        downloadInProgress = true;
+        downloadStatus = "جارٍ تنزيل حزمة التحديث...";
+        try
+        {
+            var progress = new Progress<(long Done, long Total)>(p =>
+            {
+                downloadPct = p.Total > 0 ? Math.Round(100.0 * p.Done / p.Total, 0) : 0;
+                downloadStatus = $"جارٍ التنزيل... {p.Done / 1024.0 / 1024.0:0.0} / {p.Total / 1024.0 / 1024.0:0.0} MB";
+                StateHasChanged();
+            });
+            await updateService.DownloadAndInstallAsync(updateService.PendingUpdate, progress);
+            downloadStatus = "تم التحضير. جارٍ الإغلاق والتثبيت...";
+            StateHasChanged();
+            await Task.Delay(1000);
+            try { Application.Current?.Quit(); } catch { }
+            Environment.Exit(0);
+        }
+        catch (Exception ex)
+        {
+            downloadInProgress = false;
+            downloadStatus = "";
+            toastService.ShowError("فشل التحديث: " + ex.Message, "❌ التحديثات");
+        }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        currentTab = tab;
+        if (tab == "print" && currentLayout.Sections.Count == 0)
+        {
+            currentLayout = printService.GetLayout(templateDocType);
+            RefreshPreview();
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        settings = await settingsRepository.LoadAllAsync();
+
+        if (!settings.ContainsKey(K_StoreName)) settings[K_StoreName] = "BEN POS Store";
+        if (!settings.ContainsKey(K_StorePhone)) settings[K_StorePhone] = "";
+        if (!settings.ContainsKey(K_StoreAddress)) settings[K_StoreAddress] = "";
+        if (!settings.ContainsKey(K_StoreNIF)) settings[K_StoreNIF] = "";
+        if (!settings.ContainsKey(K_StoreRC)) settings[K_StoreRC] = "";
+        if (!settings.ContainsKey(K_ReceiptHeader)) settings[K_ReceiptHeader] = "";
+        if (!settings.ContainsKey(K_ReceiptFooter)) settings[K_ReceiptFooter] = "";
+        if (!settings.ContainsKey(K_DBMode)) settings[K_DBMode] = "Local";
+        if (!settings.ContainsKey(K_MySQL_Host)) settings[K_MySQL_Host] = "127.0.0.1";
+        if (!settings.ContainsKey(K_MySQL_User)) settings[K_MySQL_User] = "root";
+        if (!settings.ContainsKey(K_MySQL_Pass)) settings[K_MySQL_Pass] = "";
+        if (!settings.ContainsKey(K_CloudSyncEnabled)) settings[K_CloudSyncEnabled] = "false";
+        if (!settings.ContainsKey(K_SupabaseURL)) settings[K_SupabaseURL] = "";
+        if (!settings.ContainsKey(K_SupabaseKey)) settings[K_SupabaseKey] = "";
+        if (!settings.ContainsKey(K_LicenseExpiryDate)) settings[K_LicenseExpiryDate] = "";
+        if (!settings.ContainsKey(K_TrialStartDate)) settings[K_TrialStartDate] = "";
+        if (!settings.ContainsKey(K_StoreNameLocked)) settings[K_StoreNameLocked] = "false";
+        if (!settings.ContainsKey(K_ShowCaisseToVendeur)) settings[K_ShowCaisseToVendeur] = "false";
+        if (!settings.ContainsKey(K_SellNoPrint)) settings[K_SellNoPrint] = "false";
+    }
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            if (isStoreNameLocked && settings.ContainsKey(K_StoreNameLocked) && settings[K_StoreNameLocked] == "true")
+            {
+                // اسم المتجر مقفول بعد التفعيل — لا نسمح بتعديله أو بتعديل القفل نفسه
+                settings[K_StoreName] = usbStoreName;
+                settings[K_StoreNameLocked] = "true";
+            }
+            bool success = await settingsRepository.SaveAllAsync(settings);
+            if (success)
+            {
+                toastService.ShowSuccess("تم حفظ الإعدادات بنجاح", "💾 حفظ الإعدادات");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("حدث خطأ أثناء الحفظ: " + ex.Message, "❌ حفظ الإعدادات");
+        }
+    }
+
+    private void ToggleCaisseVisibility(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_ShowCaisseToVendeur] = (e.Value is bool val && val) ? "true" : "false";
+    }
+
+    private async Task ToggleSellNoPrint(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_SellNoPrint] = (e.Value is bool val && val) ? "true" : "false";
+        try
+        {
+            bool success = await settingsRepository.SaveAllAsync(settings);
+            if (success)
+                toastService.ShowSuccess(settings[K_SellNoPrint] == "true" ? "تم تفعيل البيع بدون طباعة" : "تم إلغاء البيع بدون طباعة", "⚙️ البيع بدون طباعة");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حفظ الخيار: " + ex.Message, "❌ البيع بدون طباعة");
+        }
+    }
+
+    private async Task LoadProductTypes()
+    {
+        try
+        {
+            using var connection = dbService.CreateConnection();
+            var types = (await connection.QueryAsync<ProductTypeModel>("SELECT * FROM Product_Types WHERE IsDeleted = 0")).ToList();
+            await LoadTypeCountsAsync(connection, types);
+            appState.RefreshProductTypes(types);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                using var localConn = dbService.CreateConnection();
+                var types = (await localConn.QueryAsync<ProductTypeModel>("SELECT * FROM Product_Types WHERE IsDeleted = 0")).ToList();
+                await LoadTypeCountsAsync(localConn, types);
+                appState.RefreshProductTypes(types);
+                toastService.ShowWarning("يتم عرض أنواع مخزنة محلياً (الشبكة غير متاحة)", "⚠️ الشبكة غير متاحة");
+            }
+            catch
+            {
+                toastService.ShowError("فشل تحميل الأنواع: " + ex.Message, "❌ تحميل الأنواع");
+            }
+        }
+    }
+
+    private async Task LoadTypeCountsAsync(IDbConnection connection, List<ProductTypeModel> types)
+    {
+        typeProductCounts = new Dictionary<string, int>();
+        var counts = (await connection.QueryAsync<dynamic>(
+            "SELECT Pro_Type_ID, COUNT(*) AS Cnt FROM Products WHERE IsDeleted = 0 AND Pro_Type_ID IS NOT NULL GROUP BY Pro_Type_ID")).ToList();
+        foreach (var c in counts)
+        {
+            string? typeId = (string?)c.Pro_Type_ID;
+            if (typeId != null) typeProductCounts[typeId] = (int)c.Cnt;
+        }
+    }
+
+    private async Task AddType()
+    {
+        if (string.IsNullOrWhiteSpace(newTypeName)) return;
+        
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction(); // 🔥 الحماية الذرية
+        try
+        {
+            var id = Guid.NewGuid().ToString("N"); // أكثر كفاءة للفهرسة
+            await connection.ExecuteAsync(
+                "INSERT INTO Product_Types (Id, Type_Name, UpdatedAt) VALUES (@Id, @Name, @Date)",
+                new { Id = id, Name = newTypeName, Date = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") }, 
+                transaction);
+
+            transaction.Commit();
+            newTypeName = "";
+            await LoadProductTypes(); // إعادة تحميل الكاش بعد النجاح
+            toastService.ShowSuccess("تم إضافة النوع بنجاح", "📦 إضافة نوع");
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("فشل إضافة النوع: " + ex.Message, "❌ إضافة نوع");
+        }
+    }
+
+    private async Task DeleteType(string id)
+    {
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            await connection.ExecuteAsync(
+                "UPDATE Product_Types SET IsDeleted = 1 WHERE Id = @Id", 
+                new { Id = id }, 
+                transaction);
+
+            transaction.Commit();
+            await LoadProductTypes(); // تحديث الكاش
+            toastService.ShowSuccess("تم حذف النوع", "📦 حذف نوع");
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("فشل حذف النوع: " + ex.Message, "❌ حذف نوع");
+        }
+    }
+
+    // --- إدارة منتجات النوع داخل تبويب الأنواع ---
+    private async Task ToggleType(string typeId)
+    {
+        if (expandedTypeId == typeId)
+        {
+            expandedTypeId = "";
+            typeProducts.Clear();
+            return;
+        }
+        expandedTypeId = typeId;
+        await LoadTypeProducts(typeId);
+    }
+
+    private async Task LoadTypeProducts(string typeId)
+    {
+        typeProductsLoading = true;
+        try
+        {
+            using var connection = dbService.CreateConnection();
+            typeProducts = (await connection.QueryAsync<TypeProductModel>(@"
+                SELECT Id, Pro_Name, Pro_Mark, Pro_Propr, Pro_Unit, Pro_Type_ID, Pro_Barcode, Pro_Qty, Pro_QtyMin,
+                       Pro_BuyPrice, Pro_SalePriceG, Pro_SalePrice_Min, Pro_SalePrice_Max
+                FROM Products WHERE IsDeleted = 0 AND Pro_Type_ID = @TypeId ORDER BY Pro_Name",
+                new { TypeId = typeId })).ToList();
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل تحميل المنتجات: " + ex.Message, "❌ تحميل المنتجات");
+        }
+        finally
+        {
+            typeProductsLoading = false;
+        }
+    }
+
+    private int GetTypeProductCount(string typeId)
+        => typeProductCounts.TryGetValue(typeId, out var count) ? count : 0;
+
+    private void EditTypeProduct(TypeProductModel p)
+    {
+        typeProductEdit = new TypeProductEditModel
+        {
+            Id = p.Id,
+            Pro_Name = p.Pro_Name,
+            Pro_Mark = p.Pro_Mark ?? "",
+            Pro_Propr = p.Pro_Propr ?? "",
+            Pro_Unit = p.Pro_Unit ?? "",
+            Pro_Type_ID = p.Pro_Type_ID ?? "",
+            Pro_Barcode = p.Pro_Barcode ?? "",
+            Pro_Qty = p.Pro_Qty,
+            Pro_QtyMin = p.Pro_QtyMin,
+            Pro_BuyPrice = p.Pro_BuyPrice,
+            Pro_SalePriceG = p.Pro_SalePriceG,
+            Pro_SalePrice_Min = p.Pro_SalePrice_Min,
+            Pro_SalePrice_Max = p.Pro_SalePrice_Max,
+        };
+        showTypeProductModal = true;
+    }
+
+    private void CloseTypeProductModal() => showTypeProductModal = false;
+
+    private async Task SaveTypeProduct()
+    {
+        if (string.IsNullOrWhiteSpace(typeProductEdit.Pro_Name) || string.IsNullOrWhiteSpace(typeProductEdit.Pro_Type_ID))
+        {
+            toastService.ShowWarning("الاسم ونوع المنتج حقول إجبارية.", "⚠️ بيانات ناقصة");
+            return;
+        }
+        if (!(typeProductEdit.Pro_BuyPrice <= typeProductEdit.Pro_SalePriceG
+              && typeProductEdit.Pro_SalePriceG <= typeProductEdit.Pro_SalePrice_Min
+              && typeProductEdit.Pro_SalePrice_Min <= typeProductEdit.Pro_SalePrice_Max))
+        {
+            toastService.ShowWarning("خطأ في التسلسل السعري!", "⚠️ التسلسل السعري");
+            return;
+        }
+        try
+        {
+            using var connection = dbService.CreateConnection();
+            await connection.ExecuteAsync(@"
+                UPDATE Products SET Pro_Name=@Pro_Name, Pro_Mark=@Pro_Mark, Pro_Propr=@Pro_Propr, Pro_Unit=@Pro_Unit, Pro_Type_ID=@Pro_Type_ID,
+                    Pro_Barcode=@Pro_Barcode, Pro_Qty=@Pro_Qty, Pro_QtyMin=@Pro_QtyMin, Pro_BuyPrice=@Pro_BuyPrice, Pro_SalePriceG=@Pro_SalePriceG,
+                    Pro_SalePrice_Min=@Pro_SalePrice_Min, Pro_SalePrice_Max=@Pro_SalePrice_Max, UpdatedAt=@UpdatedAt, IsSynced=0 WHERE Id=@Id",
+                new { typeProductEdit.Id, typeProductEdit.Pro_Name, typeProductEdit.Pro_Mark, typeProductEdit.Pro_Propr, typeProductEdit.Pro_Unit,
+                      typeProductEdit.Pro_Type_ID, typeProductEdit.Pro_Barcode, typeProductEdit.Pro_Qty, typeProductEdit.Pro_QtyMin,
+                      typeProductEdit.Pro_BuyPrice, typeProductEdit.Pro_SalePriceG, typeProductEdit.Pro_SalePrice_Min, typeProductEdit.Pro_SalePrice_Max,
+                      UpdatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") });
+            CloseTypeProductModal();
+            if (!string.IsNullOrEmpty(expandedTypeId)) await LoadTypeProducts(expandedTypeId);
+            await LoadProductTypes();
+            toastService.ShowSuccess("تم تعديل المنتج بنجاح", "📦 تعديل منتج");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل تعديل المنتج: " + ex.Message, "❌ تعديل منتج");
+        }
+    }
+
+    private async Task DeleteTypeProduct(string id)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "هل أنت متأكد من حذف هذا المنتج؟");
+        if (!confirmed) return;
+        try
+        {
+            using var connection = dbService.CreateConnection();
+            int invoiceCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Order_Details WHERE Pro_ID = @Id", new { Id = id });
+            if (invoiceCount > 0)
+            {
+                toastService.ShowWarning("لا يمكن حذف هذا المنتج لأنه مرتبط بفواتير موجودة. يمكنك تعديله بدلاً من حذفه.", "⚠️ حذف المنتج");
+                return;
+            }
+            connection.Execute("UPDATE Products SET IsDeleted=1, IsSynced=0 WHERE Id=@Id", new { Id = id });
+            if (!string.IsNullOrEmpty(expandedTypeId)) await LoadTypeProducts(expandedTypeId);
+            await LoadProductTypes();
+            toastService.ShowSuccess("تم حذف المنتج", "📦 المنتجات");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حذف المنتج: " + ex.Message, "❌ حذف منتج");
+        }
+    }
+
+    private void CheckLicenseStatus()
+    {
+        if (!string.IsNullOrEmpty(settings[K_LicenseExpiryDate]))
+        {
+            if (DateTime.TryParse(settings[K_LicenseExpiryDate], out var expDate) && expDate > DateTime.UtcNow)
+            {
+                isLicensed = true;
+                return;
+            }
+        }
+        isLicensed = false;
+        if (string.IsNullOrEmpty(settings[K_TrialStartDate])) settings[K_TrialStartDate] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        var trialStart = DateTime.Parse(settings[K_TrialStartDate]);
+        daysLeft = 15 - (int)(DateTime.UtcNow - trialStart).TotalDays;
+        if (daysLeft < 0) daysLeft = 0;
+    }
+
+    private async Task ActivateWithCode()
+    {
+        if (authService.ValidateActivationCode(dbService, machineId, enteredLicenseKey))
+        {
+            var newExp = authService.AddLicenseTime(dbService, 1);
+            settings[K_LicenseExpiryDate] = newExp.ToString("yyyy-MM-dd HH:mm:ss");
+            isLicensed = true;
+            toastService.ShowSuccess("تم تفعيل البرنامج وإضافة سنة كاملة", "✅ تفعيل ناجح");
+        }
+        else { toastService.ShowError("كود التفعيل غير صحيح", "❌ تفعيل فاشل"); }
+
+        // أضف هذا السطر لحل التحذير
+        await Task.CompletedTask;
+    }
+
+    private async Task SaveActivationSecret()
+    {
+        if (string.IsNullOrWhiteSpace(activationSecret))
+        {
+            toastService.ShowWarning("الرجاء إدخال سر تفعيل جديد أو تركه فارغاً للعودة للافتراضي", "🔑 مفتاح التفعيل");
+            return;
+        }
+        if (activationSecret.Length < 8)
+        {
+            toastService.ShowWarning("سر التفعيل يجب ألا يقل عن 8 أحرف", "🔑 مفتاح التفعيل");
+            return;
+        }
+
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "سيتم تغيير سر التفعيل وسيصبح جميع أكواد التفعيل السابقة غير صالحة. هل أنت متأكد؟");
+        if (!confirm) return;
+
+        try
+        {
+            authService.SetActivationSecret(dbService, activationSecret);
+            hasCustomActivationSecret = true;
+            activationSecret = "";
+            toastService.ShowSuccess("تم حفظ مفتاح التفعيل الجديد بنجاح", "🔑 مفتاح التفعيل");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حفظ مفتاح التفعيل: " + ex.Message, "❌ مفتاح التفعيل");
+        }
+    }
+
+
+    private async Task ActivateWithUsb()
+    {
+        if (string.IsNullOrWhiteSpace(usbStoreName)) { toastService.ShowError("الرجاء إدخال اسم المتجر", "❌ تفعيل بالفلاشة"); return; }
+        string result = authService.TryActivateUsb(dbService, usbStoreName);
+        if (result.StartsWith("SUCCESS"))
+        {
+            settings[K_LicenseExpiryDate] = result.Split('|')[1];
+            isStoreNameLocked = true;
+            settings[K_StoreName] = usbStoreName;
+            await SaveSettings();
+            isLicensed = true;
+            toastService.ShowSuccess("تمت إضافة 3 سنوات وقفل اسم المتجر", "✅ تفعيل بالفلاشة");
+        }
+        else { toastService.ShowError(result, "❌ تفعيل بالفلاشة"); }
+    }
+	
+    private async Task CheckForUpdates()
+    {
+        if (updateService.IsBusy) return;
+        try
+        {
+            bool hasUpdate = await updateService.CheckForUpdateAsync();
+            LoadUpdateSettings();
+            if (hasUpdate)
+            {
+                toastService.ShowSuccess($"تحديث متوفر: v{updateService.PendingUpdate?.version}", "🔄 التحديثات");
+            }
+            else
+            {
+                toastService.ShowSuccess("أنت تستخدم أحدث إصدار", "✅ التحديثات");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("تعذّر الفحص: " + ex.Message, "❌ التحديثات");
+        }
+    }
+
+    private async Task CleanData()
+    {
+        var count = await dbService.CleanDatabaseAsync();
+        if (count > 0)
+            toastService.ShowSuccess($"تم تنظيف {count} سجل بنجاح", "🧹 تنظيف البيانات");
+        else
+            toastService.ShowWarning("لم يتم العثور على أخطاء عشرية لتنظيفها", "ℹ️ تنظيف البيانات");
+    }
+
+    private void BackupNow()
+    {
+        try
+        {
+            lastBackupPath = dbService.BackupDatabase();
+            toastService.ShowSuccess("تم إنشاء النسخة الاحتياطية بنجاح", "💾 نسخة احتياطية");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل إنشاء النسخة الاحتياطية: " + ex.Message, "❌ نسخة احتياطية");
+        }
+    }
+
+    private async Task RestoreNow()
+    {
+        try
+        {
+            string restored = dbService.RestoreLatestBackup();
+            if (!string.IsNullOrEmpty(restored))
+            {
+                toastService.ShowSuccess("تمت استعادة أحدث نسخة احتياطية", "♻️ استعادة نسخة");
+                await LoadSettings();
+            }
+            else
+            {
+                toastService.ShowWarning("لا توجد نسخ احتياطية متاحة للاستعادة", "ℹ️ استعادة");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشلت الاستعادة: " + ex.Message, "❌ استعادة");
+        }
+    }
+
+    private async Task DiscoverServers()
+    {
+        isDiscovering = true;
+        discoveredServers = new List<string>();
+        try
+        {
+            discoveredServers = await dbService.DiscoverMySqlServersAsync();
+            if (!discoveredServers.Any())
+                toastService.ShowWarning("لم يتم العثور على أي خادم MySQL في الشبكة. تأكد من تشغيل الخادم واتصاله بنفس الشبكة.", "🔍 اكتشاف الخادم");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الاكتشاف: " + ex.Message, "❌ اكتشاف الخادم");
+        }
+        finally
+        {
+            isDiscovering = false;
+        }
+    }
+
+    private void SelectDiscoveredServer(string host)
+    {
+        settings[K_MySQL_Host] = host;
+        toastService.ShowSuccess("تم اختيار الخادم: " + host + ". احفظ الإعدادات ثم جرّب الاتصال.", "🖥️ الخادم");
+    }
+
+    private async Task RunAudit()
+    {
+        isAuditing = true;
+        try
+        {
+            auditResult = await dbService.AuditFinancialAccuracyAsync();
+            showAuditModal = true;
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل التدقيق: " + ex.Message, "❌ التدقيق");
+        }
+        finally
+        {
+            isAuditing = false;
+        }
+    }
+
+    private void CloseAuditModal() => showAuditModal = false;
+
+    private void RefreshLog() => StateHasChanged();
+
+    private void ClearSystemLog()
+    {
+        dbService.ClearLog();
+        toastService.ShowSuccess("تم مسح سجل النظام", "🗑️ السجل");
+    }
+
+    private async Task WipeFinancialData()
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm",
+            "تحذير! سيتم حذف كل الفواتير والمصاريف وتصفير الصندوق والديون نهائياً.\n" +
+            "لا يمكن التراجع عن هذه العملية. هل أنت متأكد؟");
+        if (!confirm) return;
+
+        try
+        {
+            // نسخة احتياطية تلقائية قبل المحو (في الوضع المحلي)
+            if (dbService.DBMode != "LAN")
+            {
+                string backup = dbService.BackupDatabase();
+                lastBackupPath = backup;
+            }
+
+            int count = await dbService.WipeFinancialDataAsync(wipeResetStock);
+            toastService.ShowSuccess($"تم محو كل العمليات المالية (أثر على {count} سجل)", "🧨 محو البيانات");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشلت العملية: " + ex.Message, "❌ محو البيانات");
+        }
+    }
+
+    public class TypeProductModel
+    {
+        public string Id { get; set; } = "";
+        public string Pro_Name { get; set; } = "";
+        public string? Pro_Mark { get; set; }
+        public string? Pro_Propr { get; set; }
+        public string? Pro_Unit { get; set; }
+        public string? Pro_Type_ID { get; set; } = "";
+        public string? Pro_Barcode { get; set; }
+        public decimal Pro_Qty { get; set; }
+        public decimal Pro_QtyMin { get; set; }
+        public decimal Pro_BuyPrice { get; set; }
+        public decimal Pro_SalePriceG { get; set; }
+        public decimal Pro_SalePrice_Min { get; set; }
+        public decimal Pro_SalePrice_Max { get; set; }
+    }
+
+    public class TypeProductEditModel
+    {
+        public string Id { get; set; } = "";
+        public string Pro_Name { get; set; } = "";
+        public string Pro_Mark { get; set; } = "";
+        public string Pro_Propr { get; set; } = "";
+        public string Pro_Unit { get; set; } = "";
+        public string Pro_Type_ID { get; set; } = "";
+        public string Pro_Barcode { get; set; } = "";
+        public decimal Pro_Qty { get; set; }
+        public decimal Pro_QtyMin { get; set; }
+        public decimal Pro_BuyPrice { get; set; }
+        public decimal Pro_SalePriceG { get; set; }
+        public decimal Pro_SalePrice_Min { get; set; }
+        public decimal Pro_SalePrice_Max { get; set; }
+    }
+}

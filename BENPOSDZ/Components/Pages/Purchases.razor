@@ -1,0 +1,444 @@
+@page "/purchases"
+@using BENPOSDZ.Services
+@using Dapper
+@using Microsoft.AspNetCore.Components.Web
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject AuthService authService
+@inject ImageService imageService
+
+<div class="pos-container">
+    <!-- القسم الأيمن: البحث والمنتجات -->
+    <div class="products-section">
+        <div class="pos-top-bar">
+            <div class="customer-box" @onclick="OpenSupplierSearchModal">
+                <span>🚚 @selectedSupplierName</span>
+            </div>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" @bind="searchTerm" @bind:event="oninput" @bind:after="SearchProductsAsync" placeholder="🔍 ابحث عن سلعة لإضافتها للشراء..." @onkeypress="HandleEnterKey" autofocus/>
+        </div>
+        
+        <div class="products-grid">
+            @foreach (var product in searchResults)
+            {
+                <div class="product-card" @onclick="() => OpenAddToCartModal(product)">
+                    <div class="product-name">@product.Pro_Name</div>
+                    <div class="product-price">شراء: @product.Pro_BuyPrice د.ج</div>
+                    <div class="product-stock">المتوفر: @product.Pro_Qty</div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- القسم الأيسر: سلة المشتريات -->
+    <div class="cart-section">
+        <h3>فاتورة الشراء</h3>
+        
+        <div class="cart-items">
+            @if (!cartItems.Any())
+            {
+                <p class="empty-cart">لم تتم إضافة سلع بعد.</p>
+            }
+            else
+            {
+                @foreach (var item in cartItems)
+                {
+                    <div class="cart-item">
+                        <span class="cart-item-name">@item.Pro_Name</span>
+                        <div class="cart-item-controls">
+                            <button @onclick="() => ChangeQty(item, -1)">-</button>
+                            <span>@item.Qty</span>
+                            <button @onclick="() => ChangeQty(item, 1)">+</button>
+                            <span class="cart-item-total">@((item.BuyPrice * item.Qty).ToString("0.00")) د.ج</span>
+                            <button class="remove-btn" @onclick="() => RemoveFromCart(item)">x</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="cart-summary">
+            <div class="total-row">
+                <h2>المجموع:</h2>
+                <h2 class="total-amount">@TotalAmount.ToString("0.00") د.ج</h2>
+            </div>
+            
+            <div class="payment-section">
+                <label>المدفوع للمورد:</label>
+                <input type="number" @bind="paidAmount" class="paid-input" min="0" />
+                <small>دين للمورد: @((TotalAmount - paidAmount > 0 ? TotalAmount - paidAmount : 0).ToString("0.00")) د.ج</small>
+            </div>
+
+            <button class="checkout-btn" disabled="@(!cartItems.Any() || string.IsNullOrEmpty(selectedSupplierId))" @onclick="CheckoutPurchase">حفظ فاتورة الشراء</button>
+        </div>
+    </div>
+</div>
+
+<!-- نافذة إضافة للسلة -->
+@if (showAddToCartModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box">
+            <h3>@selectedProduct?.Pro_Name</h3>
+            <img src="@(string.IsNullOrEmpty(selectedProduct?.Pro_Image) ? "https://via.placeholder.com/150" : selectedProduct.Pro_Image)" class="prod-modal-img" />
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>سعر الشراء (دج)</label>
+                    <input type="number" @bind="modalBuyPrice" min="0" />
+                </div>
+                <div class="form-group">
+                    <label>الكمية</label>
+                    <input type="number" @bind="modalQty" min="1" />
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="ConfirmAddToCart">إضافة للسلة</button>
+                <button class="btn-cancel" @onclick="CloseAddToCartModal">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- نافذة البحث عن المورد وإضافة مورد جديد -->
+@if (showSupplierModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 600px;">
+            <h3>إدارة الموردين</h3>
+            
+            <div class="cust-search-row">
+                <input type="text" @bind="supSearchTerm" @bind:event="oninput" placeholder="🔍 ابحث بالاسم أو الهاتف..." class="cust-search-input"/>
+                <button class="btn-add-new-cust" @onclick="ToggleNewSupplierForm">+ مورد جديد</button>
+            </div>
+
+            @if (showNewSupplierForm)
+            {
+                <div class="new-cust-form">
+                    <div class="form-row">
+                        <input type="text" @bind="newSupplierName" placeholder="اسم المورد *"/>
+                        <input type="text" @bind="newSupplierPhone" placeholder="رقم الهاتف"/>
+                    </div>
+                    <div class="form-row">
+                        <input type="text" @bind="newSupplierAddress" placeholder="العنوان"/>
+                        <input type="text" @bind="newSupplierRC" placeholder="RC (السجل التجاري)"/>
+                    </div>
+                    <div class="form-row">
+                        <input type="text" @bind="newSupplierNIF" placeholder="NIF (الرقم الجبائي)"/>
+                        <input type="text" @bind="newSupplierNIS" placeholder="NIS (الضريبي)"/>
+                    </div>
+                    <button class="btn-save" @onclick="SaveSupplier">حفظ المورد</button>
+                </div>
+            }
+
+            <div class="cust-list">
+                @foreach (var sup in filteredSuppliersList)
+                {
+                    <div class="cust-item" @onclick="() => SelectSupplier(sup.Id, sup.Person_Name)">
+                        <span>@sup.Person_Name</span>
+                        <small>@sup.Person_Phone</small>
+                    </div>
+                }
+            </div>
+
+            <button class="btn-cancel" @onclick="() => showSupplierModal = false" style="width:100%; margin-top:10px;">إغلاق</button>
+        </div>
+    </div>
+}
+
+<style>
+    .pos-container { display: flex; height: calc(100vh - 60px); gap: 20px; direction: rtl; }
+    .products-section { flex: 2; display: flex; flex-direction: column; }
+    .pos-top-bar { display: flex; gap: 10px; margin-bottom: 10px; }
+    .customer-box { flex: 1; padding: 10px; background: #fff; border: 2px solid #dc3545; border-radius: 5px; cursor: pointer; text-align: center; font-weight: bold; color: #dc3545;}
+    .search-bar input { width: 100%; padding: 15px; font-size: 18px; border: 2px solid #dc3545; border-radius: 8px; margin-bottom: 15px; box-sizing: border-box; }
+    .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; }
+    .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .product-card:hover { background: #fff3f3; }
+    .product-name { font-weight: bold; margin-bottom: 5px; }
+    .product-price { color: #dc3545; font-weight: bold; }
+    .product-stock { font-size: 12px; color: #666; margin-top: 5px;}
+    
+    .cart-section { flex: 1; background: white; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .cart-items { flex: 1; overflow-y: auto; margin-bottom: 15px; }
+    .empty-cart { text-align: center; color: #999; margin-top: 50px; }
+    .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .cart-item-name { flex: 1; font-size: 14px; }
+    .cart-item-controls { display: flex; align-items: center; gap: 5px; }
+    .cart-item-controls button { width: 25px; height: 25px; border: none; background: #ddd; border-radius: 4px; cursor: pointer; font-weight: bold;}
+    .remove-btn { background: #dc3545 !important; color: white; }
+    .cart-item-total { font-weight: bold; min-width: 80px; text-align: left; }
+    
+    .cart-summary { border-top: 2px solid #eee; padding-top: 15px; }
+    .total-row { display: flex; justify-content: space-between; margin-bottom: 15px; }
+    .total-amount { color: #dc3545; }
+    .payment-section { margin-bottom: 15px; display: flex; flex-direction: column; gap: 5px;}
+    .paid-input { padding: 10px; font-size: 18px; border: 2px solid #dc3545; border-radius: 5px; }
+    .checkout-btn { width: 100%; padding: 15px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 20px; cursor: pointer; }
+    .checkout-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
+    .modal-box { background: white; padding: 25px; border-radius: 10px; width: 500px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; text-align: center;}
+    .prod-modal-img { width: 150px; height: 150px; object-fit: cover; border-radius: 8px; margin: 0 auto; }
+    .form-row { display: flex; gap: 15px; margin-top: 15px; }
+    .form-group { flex: 1; display: flex; flex-direction: column; text-align: right; }
+    .form-group label { font-weight: bold; margin-bottom: 5px; }
+    .form-group input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; text-align: center; font-size: 18px;}
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+    .btn-save { background: #dc3545; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+
+    .cust-search-row { display: flex; gap: 10px; margin-bottom: 15px; }
+    .cust-search-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+    .btn-add-new-cust { padding: 10px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    .new-cust-form { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+    .new-cust-form input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+    .cust-list { max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 5px; }
+    .cust-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; text-align: right; }
+    .cust-item:hover { background: #fff3f3; }
+    .cust-item small { color: #666; margin-right: 10px; }
+</style>
+
+@code {
+    [Inject] NavigationManager Nav { get; set; } = null!;
+
+    private string searchTerm = "";
+    private string selectedSupplierId = "";
+    private string selectedSupplierName = "اختر المورد";
+    private decimal paidAmount = 0;
+    
+    private IEnumerable<ProductPosModel> searchResults = new List<ProductPosModel>();
+    private List<PersonModel> suppliersList = new List<PersonModel>();
+    private List<PurchaseItem> cartItems = new List<PurchaseItem>();
+    private CancellationTokenSource? searchCts;
+
+    private bool showAddToCartModal = false;
+    private ProductPosModel? selectedProduct;
+    private decimal modalBuyPrice = 0;
+    private int modalQty = 1;
+
+    private bool showSupplierModal = false;
+    private string supSearchTerm = "";
+    private bool showNewSupplierForm = false;
+    private string newSupplierName = "";
+    private string newSupplierPhone = "";
+    private string newSupplierAddress = "";
+    private string newSupplierRC = "";
+    private string newSupplierNIF = "";
+    private string newSupplierNIS = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!authService.IsAdmin) { Nav.NavigateTo("/pos"); return; }
+        await LoadSuppliersAsync();
+        await SearchProductsAsync();
+    }
+
+    private async Task LoadSuppliersAsync()
+    {
+        using var connection = dbService.CreateConnection();
+        suppliersList = (await connection.QueryAsync<PersonModel>("SELECT Id, Person_Name, Person_Phone FROM Persons WHERE Person_Type = 2 AND IsDeleted = 0")).ToList();
+    }
+
+    private IEnumerable<PersonModel> filteredSuppliersList => suppliersList.Where(s => string.IsNullOrWhiteSpace(supSearchTerm) || (s.Person_Name?.Contains(supSearchTerm) == true) || (s.Person_Phone?.Contains(supSearchTerm) == true)).Take(50);
+
+
+    private async Task SearchProductsAsync()
+    {
+        searchCts?.Cancel();
+        searchCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(200, searchCts.Token);
+            using var connection = dbService.CreateConnection();
+            string sql = string.IsNullOrWhiteSpace(searchTerm) 
+                ? "SELECT * FROM Products WHERE IsDeleted = 0 ORDER BY Pro_Name LIMIT 50"
+                : "SELECT * FROM Products WHERE IsDeleted = 0 AND (Pro_Name LIKE @Term OR Pro_Barcode LIKE @Term) ORDER BY Pro_Name";
+            
+            var rawProducts = (await connection.QueryAsync<ProductPosModel>(sql, new { Term = $"%{searchTerm}%" })).ToList();
+            
+            // تحويل مسار الصورة إلى Base64 للعرض
+            foreach (var p in rawProducts)
+            {
+                p.Pro_Image = imageService.GetImageAsBase64(p.Pro_Image);
+            }
+
+            searchResults = rawProducts;
+        }
+        catch (TaskCanceledException) { }
+    }
+	
+
+    private async Task HandleEnterKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == "Tab")
+        {
+            // البحث عن تطابق كامل للباركود
+            var product = searchResults.FirstOrDefault(p => p.Pro_Barcode == searchTerm);
+            if (product != null)
+            {
+                var existing = cartItems.FirstOrDefault(c => c.ProductId == product.Id && c.BuyPrice == product.Pro_BuyPrice);
+                if (existing != null)
+                {
+                    existing.Qty += 1;
+                }
+                else
+                {
+                    cartItems.Add(new PurchaseItem { ProductId = product.Id, Pro_Name = product.Pro_Name, BuyPrice = product.Pro_BuyPrice, Qty = 1 });
+                }
+                
+                paidAmount = TotalAmount;
+                searchTerm = ""; // مسح البحث
+                await SearchProductsAsync();
+            }
+        }
+    }
+
+    private void OpenAddToCartModal(ProductPosModel product)
+    {
+        selectedProduct = product;
+        modalQty = 1;
+        modalBuyPrice = product.Pro_BuyPrice;
+        showAddToCartModal = true;
+    }
+
+    private void CloseAddToCartModal() => showAddToCartModal = false;
+
+    private async Task ConfirmAddToCart()
+    {
+        if (selectedProduct == null) return;
+        if (modalQty <= 0) { await JS.InvokeVoidAsync("alert", "الكمية يجب أن تكون أكبر من الصفر."); return; }
+        if (modalBuyPrice < 0) { await JS.InvokeVoidAsync("alert", "السعر لا يمكن أن يكون سالباً."); return; }
+
+        var existingItem = cartItems.FirstOrDefault(c => c.ProductId == selectedProduct.Id && c.BuyPrice == modalBuyPrice);
+        if (existingItem != null) existingItem.Qty += modalQty;
+        else cartItems.Add(new PurchaseItem { ProductId = selectedProduct.Id, Pro_Name = selectedProduct.Pro_Name, BuyPrice = modalBuyPrice, Qty = modalQty });
+
+        paidAmount = TotalAmount;
+        CloseAddToCartModal();
+    }
+
+    private void ChangeQty(PurchaseItem item, int delta)
+    {
+        item.Qty += delta;
+        if (item.Qty <= 0) cartItems.Remove(item);
+        paidAmount = TotalAmount;
+    }
+
+    private void RemoveFromCart(PurchaseItem item) => cartItems.Remove(item);
+    private decimal TotalAmount => cartItems.Sum(c => c.BuyPrice * c.Qty);
+
+    private void OpenSupplierSearchModal()
+    {
+        supSearchTerm = "";
+        showNewSupplierForm = false;
+        showSupplierModal = true;
+    }
+
+    private void ToggleNewSupplierForm() => showNewSupplierForm = !showNewSupplierForm;
+
+    private void SelectSupplier(string id, string name)
+    {
+        selectedSupplierId = id;
+        selectedSupplierName = name;
+        showSupplierModal = false;
+    }
+
+    private async Task SaveSupplier()
+    {
+        if (string.IsNullOrWhiteSpace(newSupplierName)) { await JS.InvokeVoidAsync("alert", "الاسم مطلوب."); return; }
+
+        using var connection = dbService.CreateConnection();
+        string newId = Guid.NewGuid().ToString();
+        await connection.ExecuteAsync(@"INSERT INTO Persons (Id, Person_Name, Person_Type, Person_Phone, Person_Adress, Person_NRC, Person_NIF, Person_NIS, UpdatedAt) 
+                                        VALUES (@Id, @Name, 2, @Phone, @Address, @RC, @NIF, @NIS, @Date)", 
+            new { Id = newId, Name = newSupplierName, Phone = newSupplierPhone, Address = newSupplierAddress, RC = newSupplierRC, NIF = newSupplierNIF, NIS = newSupplierNIS, Date = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") });
+        
+        await LoadSuppliersAsync();
+        SelectSupplier(newId, newSupplierName);
+        
+        newSupplierName = ""; newSupplierPhone = ""; newSupplierAddress = ""; newSupplierRC = ""; newSupplierNIF = ""; newSupplierNIS = "";
+        showNewSupplierForm = false;
+    }
+
+    private async Task CheckoutPurchase()
+    {
+        if (paidAmount < 0)
+        {
+            await JS.InvokeVoidAsync("alert", "المبلغ المدفوع لا يمكن أن يكون سالباً.");
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            string orderId = Guid.NewGuid().ToString();
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            decimal unpaid = TotalAmount - paidAmount;
+            if (unpaid < 0) unpaid = 0;
+
+            await connection.ExecuteAsync(@"INSERT INTO Orders (Id, Order_Type, Order_Date, Person_ID, User_ID, Price, Paid, Unpaid, UpdatedAt, IsSynced, IsDeleted) 
+                                            VALUES (@Id, 2, @Date, @Person, 'admin', @Price, @Paid, @Unpaid, @UpdatedAt, 0, 0)",
+                new { Id = orderId, Date = dateNow, Person = selectedSupplierId, Price = TotalAmount, Paid = paidAmount, Unpaid = unpaid, UpdatedAt = dateNow }, transaction);
+
+            foreach (var item in cartItems)
+            {
+                await connection.ExecuteAsync(@"INSERT INTO Order_Details (Id, Order_ID, Pro_ID, Pro_Qty, Pro_Price, UpdatedAt, IsSynced, IsDeleted) 
+                                                VALUES (@Id, @OrderId, @ProId, @Qty, @Price, @UpdatedAt, 0, 0)",
+                    new { Id = Guid.NewGuid().ToString(), OrderId = orderId, ProId = item.ProductId, Qty = item.Qty, Price = item.BuyPrice, UpdatedAt = dateNow }, transaction);
+
+				await connection.ExecuteAsync("UPDATE Products SET Pro_Qty = Pro_Qty + @Qty, Pro_BuyPrice = @Price, Pro_Qty_Inv = CASE WHEN Is_Counted = 1 THEN Pro_Qty_Inv + @Qty ELSE Pro_Qty_Inv END WHERE Id = @Id", new { Qty = item.Qty, Price = item.BuyPrice, Id = item.ProductId }, transaction);
+            }
+
+            if (paidAmount > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount - @Amt WHERE Id = (SELECT Id FROM Coffer LIMIT 1)", new { Amt = paidAmount }, transaction);
+            }
+
+            if (unpaid > 0)
+            {
+            // دين المورد يُحسب تلقائياً من الفواتير غير المسدّدة (Orders.Unpaid)
+            }
+
+            transaction.Commit();
+            await JS.InvokeVoidAsync("alert", "تم تسجيل فاتورة الشراء بنجاح! تم تحديث المخزون وخصم المبلغ من الخزنة.");
+            cartItems.Clear();
+            paidAmount = 0;
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            await JS.InvokeVoidAsync("alert", "خطأ: " + ex.Message);
+        }
+    }
+
+    public class ProductPosModel
+    {
+        public string Id { get; set; } = "";
+        public string Pro_Name { get; set; } = "";
+        public string? Pro_Image { get; set; }
+        public decimal Pro_Qty { get; set; }
+        public decimal Pro_BuyPrice { get; set; }
+		public string? Pro_Barcode { get; set; } // <--- أضف هذا السطر
+
+    }
+
+    public class PersonModel
+    {
+        public string Id { get; set; } = "";
+        public string Person_Name { get; set; } = "";
+        public string? Person_Phone { get; set; }
+    }
+
+    public class PurchaseItem
+    {
+        public string ProductId { get; set; } = "";
+        public string Pro_Name { get; set; } = "";
+        public decimal BuyPrice { get; set; }
+        public int Qty { get; set; }
+    }
+}

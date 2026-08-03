@@ -1,0 +1,423 @@
+@page "/invoices"
+@using BENPOSDZ.Services
+@using Dapper
+@inject DatabaseService dbService
+@inject IJSRuntime JS
+@inject PrintTemplateService printService
+@inject PrintService sysPrintService
+
+
+<div class="filters-bar">
+    <label>من تاريخ:</label>
+    <input type="date" @bind="filterDateFrom" @bind:after="LoadInvoices" class="filter-input" />
+    <label>إلى تاريخ:</label>
+    <input type="date" @bind="filterDateTo" @bind:after="LoadInvoices" class="filter-input" />
+    <input type="text" @bind="filterCustomer" @bind:event="oninput" @bind:after="LoadInvoices" placeholder="🔍 بحث بالزبون..." class="filter-input" />
+    <label class="debt-filter"><input type="checkbox" @bind="filterDebtOnly" @bind:after="LoadInvoices" /> الديون فقط</label>
+</div>
+
+<div class="inv-tabs">
+    @foreach (var sec in sections)
+    {
+        <div class="inv-tab @sec.CssClass @(activeTabKey == sec.Key ? "active" : "")" @onclick="() => activeTabKey = sec.Key">
+            <span>@sec.Emoji @sec.Title</span>
+            <span class="inv-tab-count">@sec.Items.Count</span>
+        </div>
+    }
+</div>
+
+@{
+    var activeSec = sections.FirstOrDefault(s => s.Key == activeTabKey);
+}
+@if (activeSec != null)
+{
+    <div class="inv-section">
+        <div class="inv-section-header @activeSec.CssClass">
+            <span>@activeSec.Emoji @activeSec.Title</span>
+            <span class="inv-count">@activeSec.Items.Count فاتورة</span>
+        </div>
+        @if (activeSec.Items.Any())
+        {
+            <table class="invoices-table">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>الزبون</th>
+                        <th>المجموع</th>
+                        <th>المدفوع</th>
+                        <th>الدين</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in activeSec.Items)
+                    {
+                        <tr>
+                            <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@inv.Person_Name</td>
+                            <td>@inv.Price د.ج</td>
+                            <td>@inv.Paid د.ج</td>
+                            <td class="@(inv.Order_Type <= 2 && inv.Unpaid > 0 ? "debt-color" : "")">@((inv.Order_Type <= 2 ? inv.Unpaid : 0).ToString("0.00")) د.ج</td>
+                            <td>
+                                <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "receipt")'>🧾 وصل</button>
+                                <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "invoice")'>📄 فاتورة</button>
+                                <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "delivery")'>🚚 BL</button>
+                                <button class="btn-view" @onclick="() => ViewDetails(inv.Id)">👁️</button>
+                                <button class="btn-return" @onclick="() => InitiateReturn(inv.Id)">↩️</button>
+                                @if (authService.IsAdmin)
+                                {
+                                    <button class="btn-delete" @onclick="() => DeleteInvoice(inv.Id)">🗑️</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="no-data">لا توجد فواتير في هذا القسم</p>
+        }
+    </div>
+}
+
+@if (showDetailsModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box">
+            <h3>تفاصيل الفاتورة</h3>
+            <table class="details-table">
+                <thead><tr><th>السلعة</th><th>الكمية</th><th>السعر</th><th>المجموع</th></tr></thead>
+                <tbody>
+                    @foreach(var det in invoiceDetails)
+                    {
+                        <tr><td>@det.Pro_Name</td><td>@det.Pro_Qty</td><td>@det.Pro_Price</td><td>@((det.Pro_Qty * det.Pro_Price).ToString("0.00"))</td></tr>
+                    }
+                </tbody>
+            </table>
+            <button class="btn-cancel" @onclick="() => showDetailsModal = false" style="width:100%">إغلاق</button>
+        </div>
+    </div>
+}
+
+@if (showReturnModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box">
+            <h3>استرجاع سلع من الفاتورة</h3>
+            <table class="details-table">
+                <thead><tr><th>السلعة</th><th>الكمية الأصلية</th><th>كمية الإرجاع</th></tr></thead>
+                <tbody>
+                    @foreach(var det in invoiceDetails)
+                    {
+                        <tr>
+                            <td>@det.Pro_Name</td>
+                            <td>@det.Pro_Qty</td>
+                            <td><input type="number" min="0" max="@det.Pro_Qty" @bind="det.ReturnQty" style="width: 70px;" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="ConfirmReturn">تأكيد الإرجاع</button>
+                <button class="btn-cancel" @onclick="() => showReturnModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .filters-bar { display: flex; gap: 15px; margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; }
+    .filter-input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+    .debt-filter { display: flex; align-items: center; gap: 5px; font-weight: bold; }
+    .inv-tabs { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+    .inv-tab { flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border: 2px solid #eee; background: #f8f9fa; border-radius: 10px; cursor: pointer; font-weight: bold; color: #555; transition: all .2s; }
+    .inv-tab:hover { border-color: #007bff; transform: translateY(-2px); }
+    .inv-tab.active { color: white; border-color: transparent; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+    .inv-tab.active.sec-sale { background: linear-gradient(135deg, #28a745, #218838); }
+    .inv-tab.active.sec-purchase { background: linear-gradient(135deg, #007bff, #0062cc); }
+    .inv-tab.active.sec-return { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333; }
+    .inv-tab.active.sec-purchase-return { background: linear-gradient(135deg, #dc3545, #c82333); }
+    .inv-tab-count { background: #007bff; color: white; border-radius: 12px; padding: 1px 8px; font-size: 12px; }
+    .inv-tab.active .inv-tab-count { background: rgba(255,255,255,0.3); }
+    .inv-section { margin-bottom: 25px; }
+    .inv-section-header { display: flex; justify-content: space-between; align-items: center; color: white; padding: 10px 15px; border-radius: 8px 8px 0 0; font-weight: bold; }
+    .sec-sale { background: linear-gradient(135deg, #28a745, #218838); }
+    .sec-purchase { background: linear-gradient(135deg, #007bff, #0062cc); }
+    .sec-return { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333; }
+    .sec-purchase-return { background: linear-gradient(135deg, #dc3545, #c82333); }
+    .inv-count { font-size: 13px; opacity: 0.9; }
+    .no-data { background: #fff; padding: 15px; border-radius: 0 0 8px 8px; color: #888; text-align: center; }
+    .invoices-table { width: 100%; border-collapse: collapse; background: white; border-radius: 0 0 8px 8px; overflow: hidden; margin: 0; }
+    .invoices-table th { background: #343a40; color: white; padding: 12px; text-align: right; }
+    .invoices-table td { padding: 10px; border-bottom: 1px solid #eee; }
+    .debt-color { color: #dc3545; font-weight: bold; }
+    .btn-print { background: #17a2b8; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+    .btn-view { background: #6c757d; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+    .btn-return { background: #ffc107; color: black; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+    .btn-delete { background: #dc3545; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+    
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
+    .modal-box { background: white; padding: 25px; border-radius: 10px; width: 600px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; text-align: center;}
+    .details-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .details-table th { background: #f8f9fa; padding: 8px; text-align: right; border: 1px solid #ddd; }
+    .details-table td { padding: 8px; border: 1px solid #ddd; }
+    .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
+    .btn-save { background: #28a745; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+</style>
+
+@code {
+    [Inject] NavigationManager Nav { get; set; } = null!;
+    [Inject] AuthService authService { get; set; } = null!;
+   
+	protected override async Task OnInitializedAsync()
+    { 
+		if (!authService.IsLicensed) { Nav.NavigateTo("/pos"); return; }
+        await LoadInvoices();
+    }
+    private DateTime? filterDateFrom = null;
+    private DateTime? filterDateTo = null;
+	
+    private string filterCustomer = "";
+    private bool filterDebtOnly = false;
+
+    private List<InvoiceSection> sections = new List<InvoiceSection>();
+    private List<InvoiceDetailModel> invoiceDetails = new List<InvoiceDetailModel>();
+    private string activeTabKey = "sale";
+
+    private bool showDetailsModal = false;
+    private bool showReturnModal = false;
+    private string currentInvoiceId = "";
+
+
+
+    private async Task LoadInvoices()
+    {
+        using var connection = dbService.CreateConnection();
+        string sql = @"SELECT o.Id, o.Order_Date, o.Price, o.Paid, o.Unpaid, 
+                       CASE WHEN p.Person_Name IS NULL THEN 'Au Comptoir' ELSE p.Person_Name END as Person_Name,
+                       o.Order_Type 
+                       FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id 
+                       WHERE o.IsDeleted = 0 AND o.Order_Type IN (0,1,2,3,4)";
+        var parameters = new DynamicParameters();
+
+        if (filterDateFrom.HasValue) { sql += " AND date(o.Order_Date) >= date(@From)"; parameters.Add("From", filterDateFrom.Value.ToString("yyyy-MM-dd")); }
+        if (filterDateTo.HasValue) { sql += " AND date(o.Order_Date) <= date(@To)"; parameters.Add("To", filterDateTo.Value.ToString("yyyy-MM-dd")); }
+        if (!string.IsNullOrWhiteSpace(filterCustomer)) { sql += " AND p.Person_Name LIKE @Cust"; parameters.Add("Cust", $"%{filterCustomer}%"); }
+        if (filterDebtOnly) { sql += " AND o.Unpaid > 0"; }
+
+        sql += " ORDER BY o.Order_Date DESC LIMIT 100";
+        var all = (await QueryProfiler.TimeAsync(dbService, "Invoices.LoadInvoices", () => connection.QueryAsync<InvoiceListModel>(sql, parameters))).ToList();
+
+        // تقسيم الفواتير حسب النوع في تبويبات منفصلة
+        sections = new List<InvoiceSection>
+        {
+            new("sale", "🛒", "فواتير البيع", "sec-sale", all.Where(x => x.Order_Type == 0 || x.Order_Type == 1).ToList()),
+            new("purchase", "📦", "فواتير الشراء", "sec-purchase", all.Where(x => x.Order_Type == 2).ToList()),
+            new("return", "↩️", "مرتجعات البيع", "sec-return", all.Where(x => x.Order_Type == 3).ToList()),
+            new("purchase-return", "🔁", "مرتجعات الشراء", "sec-purchase-return", all.Where(x => x.Order_Type == 4).ToList())
+        };
+        if (!sections.Any(s => s.Key == activeTabKey)) activeTabKey = "sale";
+    }
+
+
+	private async Task ViewDetails(string invId)
+    {
+        currentInvoiceId = invId;
+        using var connection = dbService.CreateConnection();
+        // أضفنا od.Pro_ID للاستعلام
+        string sql = @"SELECT od.Id, od.Pro_ID, od.Pro_Qty, od.Pro_Price, p.Pro_Name FROM Order_Details od JOIN Products p ON od.Pro_ID = p.Id WHERE od.Order_ID = @Id AND od.IsDeleted = 0";
+        invoiceDetails = (await QueryProfiler.TimeAsync(dbService, "Invoices.ViewDetails", () => connection.QueryAsync<InvoiceDetailModel>(sql, new { Id = invId }))).ToList();
+        showDetailsModal = true;
+    }
+	
+    private async Task InitiateReturn(string invId)
+    {
+        await ViewDetails(invId); // تحميل نفس التفاصيل
+        showDetailsModal = false;
+        showReturnModal = true;
+    }
+
+    private async Task ConfirmReturn()
+    {
+        var itemsToReturn = invoiceDetails.Where(i => i.ReturnQty > 0).ToList();
+        if (!itemsToReturn.Any()) { showReturnModal = false; return; }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        
+        try
+        {
+            string returnOrderId = Guid.NewGuid().ToString();
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            decimal returnTotal = itemsToReturn.Sum(i => i.ReturnQty * i.Pro_Price);
+
+            // معرفة مقدار دين الفاتورة الأصلية لتقسيم المُرجع:
+            // نقداً (من الصندوق) فقط لما دُفع فعلاً، والباقي يُخصم من الدين
+            var original = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT Person_ID, Paid, Unpaid FROM Orders WHERE Id = @OrigId", new { OrigId = currentInvoiceId }, transaction);
+            if (original == null) throw new Exception("الفاتورة الأصلية غير موجودة.");
+            string originalPerson = original.Person_ID == null ? "Au Comptoir" : (string)original.Person_ID;
+            decimal originalUnpaid = (decimal)original.Unpaid;
+            decimal debtToReduce = Math.Min(returnTotal, originalUnpaid);
+            decimal cashRefund = returnTotal - debtToReduce;
+
+            // 1. فاتورة مرتجع (Paid = النقد المُسترجع، Unpaid = الدين المُعفى)
+            await connection.ExecuteAsync(@"INSERT INTO Orders (Id, Order_Type, Order_Date, Person_ID, User_ID, Price, Paid, Unpaid, Parent_Order_Id, UpdatedAt, IsSynced, IsDeleted) 
+                                            VALUES (@Id, 3, @Date, @Person, 'admin', @Price, @Paid, @Unpaid, @OrigId, @UpdatedAt, 0, 0)",
+                new { Id = returnOrderId, Date = dateNow, Person = originalPerson, Price = returnTotal, Paid = cashRefund, Unpaid = debtToReduce, OrigId = currentInvoiceId, UpdatedAt = dateNow }, transaction);
+			// 2. تفاصيل المرتجع وزيادة المخزون
+            foreach (var item in itemsToReturn)
+            {
+                // زيادة المخزون باستخدام Pro_ID مباشرة
+                await connection.ExecuteAsync("UPDATE Products SET Pro_Qty = Pro_Qty + @Qty WHERE Id = @ProId", new { Qty = item.ReturnQty, ProId = item.Pro_ID }, transaction);
+                
+                // إدخال تفاصيل المرتجع باستخدام Pro_ID مباشرة
+                await connection.ExecuteAsync(@"INSERT INTO Order_Details (Id, Order_ID, Pro_ID, Pro_Qty, Pro_Price, UpdatedAt, IsSynced, IsDeleted) 
+                                               VALUES (@NewId, @RetId, @ProId, @Qty, @Price, @Date, 0, 0)", 
+                    new { NewId = Guid.NewGuid().ToString(), RetId = returnOrderId, ProId = item.Pro_ID, Qty = item.ReturnQty, Price = item.Pro_Price, Date = dateNow }, transaction);
+            }
+
+            // 3. خصم النقد الفعلي فقط من الصندوق
+            if (cashRefund > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount - @Amt", new { Amt = cashRefund }, transaction);
+            }
+
+            // 4. خصم الدين عن الفاتورة الأصلية بمقدار المُعفى
+            if (debtToReduce > 0)
+            {
+                await connection.ExecuteAsync("UPDATE Orders SET Unpaid = Unpaid - @Debt, Paid = Paid + @Debt WHERE Id = @OrigId", new { Debt = debtToReduce, OrigId = currentInvoiceId }, transaction);
+            }
+
+            transaction.Commit();
+            await JS.InvokeVoidAsync("alert", "تم الإرجاع بنجاح.");
+            showReturnModal = false;
+            await LoadInvoices();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            await JS.InvokeVoidAsync("alert", "خطأ: " + ex.Message);
+        }
+    }
+
+    private async Task DeleteInvoice(string invId)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "حذف الفاتورة سيعدّل المخزون والمال تلقائياً. متابعة؟");
+        if (!confirm) return;
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            var order = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT Order_Type, Paid, Unpaid, Price, Parent_Order_Id FROM Orders WHERE Id = @Id", new { Id = invId }, transaction);
+            if (order == null) throw new Exception("الفاتورة غير موجودة.");
+            int orderType = (int)order.Order_Type;
+
+            // تعديل المخزون: 0/1 (بيع): الحذف يزيد المخزون، 2 (شراء): الحذف ينقص المخزون، 3 (مرتجع): الحذف ينقص المخزون
+            bool isSale = orderType == 0 || orderType == 1;
+            var details = await connection.QueryAsync<dynamic>("SELECT Pro_ID, Pro_Qty FROM Order_Details WHERE Order_ID = @Id", new { Id = invId }, transaction);
+            foreach (var d in details)
+            {
+                decimal qty = (decimal)d.Pro_Qty;
+                decimal delta = isSale ? qty : -qty;
+                await connection.ExecuteAsync("UPDATE Products SET Pro_Qty = Pro_Qty + @Delta WHERE Id = @Id", new { Delta = delta, Id = d.Pro_ID }, transaction);
+            }
+
+            // عكس الحركات المالية عند الحذف
+            decimal paid = (decimal)order.Paid;
+            if (orderType == 0 || orderType == 1) // بيع: كان المال أُضيف للصندوق
+            {
+                if (paid > 0) await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount - @Amt", new { Amt = paid }, transaction);
+            }
+            else if (orderType == 2) // شراء: كان المال خُصم من الخزنة
+            {
+                if (paid > 0) await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount + @Amt", new { Amt = paid }, transaction);
+            }
+            else if (orderType == 3) // مرتجع بيع: نُعيد النقد المُسترجع للصندوق ونُعيد الدين المُعفى
+            {
+                if (paid > 0) await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount + @Amt", new { Amt = paid }, transaction);
+
+                if (order.Parent_Order_Id != null && (decimal)order.Unpaid > 0)
+                {
+                    decimal forgiven = (decimal)order.Unpaid;
+                    await connection.ExecuteAsync("UPDATE Orders SET Paid = Paid - LEAST(@F, Paid), Unpaid = Unpaid + LEAST(@F, Paid) WHERE Id = @Id", new { F = forgiven, Id = (string)order.Parent_Order_Id }, transaction);
+                }
+            }
+            else if (orderType == 4) // مرتجع شراء: نُعيد النقد المُسترجع للخزنة
+            {
+                if (paid > 0) await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount + @Amt", new { Amt = paid }, transaction);
+            }
+
+            // حذف منطقي
+            await connection.ExecuteAsync("UPDATE Orders SET IsDeleted = 1 WHERE Id = @Id", new { Id = invId }, transaction);
+            await connection.ExecuteAsync("UPDATE Order_Details SET IsDeleted = 1 WHERE Order_ID = @Id", new { Id = invId }, transaction);
+
+            transaction.Commit();
+            await LoadInvoices();
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            await JS.InvokeVoidAsync("alert", "خطأ: " + ex.Message);
+        }
+    }
+	
+    private async Task PrintInvoice(string invId, string docType)
+    {
+        using var connection = dbService.CreateConnection();
+        var inv = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT o.*, p.Person_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id WHERE o.Id = @Id", new { Id = invId });
+        if (inv == null) return;
+
+        var details = await connection.QueryAsync<dynamic>(@"SELECT p.Pro_Name, od.Pro_Qty, od.Pro_Price FROM Order_Details od JOIN Products p ON od.Pro_ID = p.Id WHERE od.Order_ID = @Id", new { Id = invId });
+
+        string customerName = "Au Comptoir";
+        if (inv.Person_Name != null) customerName = (string)inv.Person_Name;
+
+        string title = docType switch { "receipt" => "وصل", "delivery" => "بون تسليم", _ => "فاتورة" };
+
+        var data = new PrintTemplateService.PrintData
+        {
+            DocType = docType,
+            Title = title,
+            InvoiceNumber = invId.Substring(0, 8),
+            Date = Convert.ToDateTime(inv.Order_Date).ToString("yyyy-MM-dd HH:mm"),
+            Customer = customerName,
+            Items = details.Select(d => new PrintTemplateService.PrintItem((string)d.Pro_Name, (decimal)d.Pro_Qty, (decimal)d.Pro_Price, (decimal)(d.Pro_Qty * d.Pro_Price))).ToList(),
+            Total = (decimal)inv.Price,
+            Paid = (decimal)inv.Paid,
+            Debt = (decimal)inv.Unpaid
+        };
+
+        string html = printService.RenderFullDocument(docType, data);
+        await sysPrintService.PrintHtmlAsync(JS, html, docType == "receipt");
+    }
+
+
+
+
+    public class InvoiceListModel
+    {
+        public string Id { get; set; } = "";
+        public DateTime Order_Date { get; set; }
+        public string Person_Name { get; set; } = "";
+        public decimal Price { get; set; }
+        public decimal Paid { get; set; }
+        public decimal Unpaid { get; set; }
+        public int Order_Type { get; set; } // <--- أضف هذا السطر
+        public string? Parent_Order_Id { get; set; } // <--- أضف هذا السطر
+    }
+
+    public class InvoiceDetailModel
+    {
+        public string Id { get; set; } = ""; // أضفنا Id لاستخدامه في المرتجع
+		public string Pro_ID { get; set; } = ""; // <--- أضف هذا السطر
+        public string Pro_Name { get; set; } = "";
+        public decimal Pro_Qty { get; set; }
+        public decimal Pro_Price { get; set; }
+        public int ReturnQty { get; set; } = 0;
+    }
+
+    public record InvoiceSection(string Key, string Emoji, string Title, string CssClass, List<InvoiceListModel> Items);
+}
