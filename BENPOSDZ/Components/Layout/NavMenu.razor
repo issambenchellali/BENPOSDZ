@@ -1,27 +1,62 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">BENPOSDZ</a>
+﻿@using BENPOSDZ.Services
+@inject AuthService authService
+@inject IApplicationStateService appState
+
+<nav class="sidebar @(Open ? "open" : "")">
+    <div class="sidebar-header">
+        <button class="btn-close-drawer" @onclick="CloseDrawer" aria-label="إغلاق القائمة">✖</button>
+        <h2>@StoreName</h2>
+        <div class="user-info">
+            <span>👤 @authService.CurrentUser?.User_FullName</span>
+            <small class="connection-badge" style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
+                @appState.ConnectionStatus
+            </small>
+            @if (PendingSyncCount > 0)
+            {
+                <small class="connection-badge" style="color: #f59e0b; display:block; font-size: 10px;">
+                    ⏳ @PendingSyncCount عملية بانتظار المزامنة
+                </small>
+            }
+            <div class="logout-row">
+                <button class="btn-sync" @onclick="OnSync">☁️ مزامنة</button>
+                <button class="btn-logout" @onclick="OnLogout">خروج</button>
+            </div>
+        </div>
     </div>
-</div>
+    <ul class="nav-links">
+        <li><NavLink href="/pos" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🛒 نقطة البيع</NavLink></li>
+        @if (authService.IsLicensed)
+        {
+            <li><NavLink href="/invoices" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🧾 الفواتير</NavLink></li>
+        }
+        @if (authService.IsAdmin)
+        {
+            <li><NavLink href="/persons" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">👥 العملاء والموردين</NavLink></li>
+        }
+        <li><NavLink href="/products" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">📦 إدارة المنتجات</NavLink></li>
+        @if (authService.IsAdmin)
+        {
+            <li><NavLink href="/purchases" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🚚 المشتريات</NavLink></li>
+        }
+        <li><NavLink href="/finance" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
+        @if (authService.IsAdmin)
+        {
+            <li><NavLink href="/settings" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">⚙️ الإعدادات</NavLink></li>
+        }
+        @if (authService.IsAdmin && authService.IsLicensed)
+        {
+            <li><NavLink href="/users" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">👥 المستخدمون</NavLink></li>
+        }
+    </ul>
+</nav>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSync { get; set; }
+    [Parameter] public EventCallback OnLogout { get; set; }
+    [Parameter] public string StoreName { get; set; } = "BEN POS";
+    [Parameter] public int PendingSyncCount { get; set; }
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
+    private async Task CloseDrawer() => await OnClose.InvokeAsync();
+}

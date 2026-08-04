@@ -45,11 +45,11 @@
         }
 
         <div class="app-layout">
-            <!-- شريط علوي للجوال: هامبورغر + اسم المتجر + مزامنة -->
+            <!-- شريط علوي للجوال: هامبورغر (يسار) + عنوان الصفحة (وسط) -->
             <div class="mobile-header">
+                <div class="mobile-header-side"></div>
+                <span class="mobile-title">@pageTitle</span>
                 <button class="hamburger" @onclick="ToggleSidebar" aria-label="القائمة">☰</button>
-                <span class="mobile-title">@storeName</span>
-                <button class="mobile-sync" @onclick="SyncData" title="مزامنة">☁️</button>
             </div>
 
             @if (sidebarOpen)
@@ -57,52 +57,8 @@
                 <div class="drawer-overlay" @onclick="CloseSidebar"></div>
             }
 
-            <nav class="sidebar @(sidebarOpen ? "open" : "")">
-                <div class="sidebar-header">
-                    <h2>@storeName</h2>
-                    <div class="user-info">
-                        <span>👤 @authService.CurrentUser?.User_FullName</span>
-                        <small class="connection-badge" style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
-							@appState.ConnectionStatus
-						</small>
-						@if (pendingSyncCount > 0)
-						{
-							<small class="connection-badge" style="color: #f59e0b; display:block; font-size: 10px;">
-								⏳ @pendingSyncCount عملية بانتظار المزامنة
-							</small>
-						}
-                        <div class="logout-row">
-                            <button class="btn-sync" @onclick="SyncData">☁️ مزامنة</button>
-                            <button class="btn-logout" @onclick="Logout">خروج</button>
-                        </div>
-                    </div>
-                </div>
-                <ul class="nav-links">
-                    <li><NavLink href="/pos" @onclick="CloseSidebar">🛒 نقطة البيع</NavLink></li>
-                    @if (authService.IsLicensed)
-                    {
-                        <li><NavLink href="/invoices" @onclick="CloseSidebar">🧾 الفواتير</NavLink></li>
-                    }
-                    @if (authService.IsAdmin)
-                    {
-                        <li><NavLink href="/persons" @onclick="CloseSidebar">👥 العملاء والموردين</NavLink></li>
-                    }
-                    <li><NavLink href="/products" @onclick="CloseSidebar">📦 إدارة المنتجات</NavLink></li>
-                    @if (authService.IsAdmin)
-                    {
-                        <li><NavLink href="/purchases" @onclick="CloseSidebar">🚚 المشتريات</NavLink></li>
-                    }
-                    <li><NavLink href="/finance" @onclick="CloseSidebar">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
-                    @if (authService.IsAdmin)
-                    {
-                        <li><NavLink href="/settings" @onclick="CloseSidebar">⚙️ الإعدادات</NavLink></li>
-                    }
-                    @if (authService.IsAdmin && authService.IsLicensed)
-                    {
-                        <li><NavLink href="/users" @onclick="CloseSidebar">👥 المستخدمون</NavLink></li>
-                    }
-                </ul>
-            </nav>
+            <NavMenu Open="@sidebarOpen" OnClose="CloseSidebar" OnSync="SyncData" OnLogout="Logout"
+                     StoreName="@storeName" PendingSyncCount="@pendingSyncCount" />
 
             <main class="main-content">
                 <ErrorBoundary>
@@ -120,21 +76,6 @@
                 </ErrorBoundary>
             </main>
         </div>
-
-        <!-- شريط التنقل السفلي (يظهر على الجوال فقط) -->
-        <nav class="bottom-nav">
-            <NavLink href="/pos" class="bn-item">🛒<span>نقطة البيع</span></NavLink>
-            @if (authService.IsLicensed)
-            {
-                <NavLink href="/invoices" class="bn-item">🧾<span>الفواتير</span></NavLink>
-            }
-            <NavLink href="/products" class="bn-item">📦<span>المنتجات</span></NavLink>
-            <NavLink href="/finance" class="bn-item">💰<span>المالية</span></NavLink>
-            @if (authService.IsAdmin)
-            {
-                <NavLink href="/settings" class="bn-item">⚙️<span>الإعدادات</span></NavLink>
-            }
-        </nav>
     }
 
     <!-- مكون الإشعارات (Toast Notifications) -->
@@ -164,7 +105,8 @@ else
     .mobile-header { display: none; }
     .drawer-overlay { display: none; }
     .sidebar { width: 250px; background-color: #2c3e50; color: white; padding: 20px 0; display: flex; flex-direction: column; }
-    .sidebar-header { text-align: center; padding: 20px; border-bottom: 1px solid #3e5063; }
+    .sidebar-header { position: relative; text-align: center; padding: 20px; border-bottom: 1px solid #3e5063; }
+    .btn-close-drawer { display: none; }
     .user-info { margin-top: 15px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 14px; }
     .connection-badge { display:block; font-size: 12px; margin-bottom: 5px; }
     .logout-row { display: flex; gap: 5px; width: 100%; }
@@ -176,8 +118,7 @@ else
     .nav-links li a.active { background-color: #007bff; }
     .main-content { flex: 1; padding: 30px; background-color: #f4f6f9; overflow-y: auto; }
     .loading-screen { display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial; font-size: 20px; color: #666; }
-    .bottom-nav { display: none; }
-    
+
     /* Toast Notification Style */
     .toast-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 9999; min-width: 260px; max-width: 480px; text-align: center; animation: fadeIn 0.3s; }
     .toast-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
@@ -188,9 +129,9 @@ else
     @@media (max-width: 768px) {
         .app-layout { height: 100vh; display: block; }
         .sidebar { display: none; }
-        .main-content { padding: 12px; padding-bottom: 76px; }
+        .main-content { padding: 12px; }
 
-        /* الشريط العلوي مع الهامبورغر واسم المتجر وزر المزامنة */
+        /* الشريط العلوي: هامبورغر يسار + عنوان الصفحة في الوسط */
         .mobile-header {
             display: flex;
             align-items: center;
@@ -204,6 +145,7 @@ else
             z-index: 1100;
             box-shadow: 0 2px 6px rgba(0,0,0,0.25);
         }
+        .mobile-header-side { width: 44px; }
         .hamburger {
             background: none;
             border: none;
@@ -213,20 +155,19 @@ else
             line-height: 1;
             padding: 4px 10px;
         }
-        .mobile-title { font-weight: bold; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
-        .mobile-sync { background: #007bff; border: none; color: white; border-radius: 6px; font-size: 18px; cursor: pointer; padding: 6px 10px; }
+        .mobile-title { flex: 1; text-align: center; font-weight: bold; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        /* الشريط الجانبي كدرج منزلق من اليمين (RTL) */
+        /* الشريط الجانبي كدرج منزلق من اليسار (بجانب زر الهامبورغر) */
         .sidebar {
             display: flex;
             position: fixed;
-            top: 0; right: 0; bottom: 0;
+            top: 0; left: 0; bottom: 0;
             width: 260px;
             z-index: 1200;
             padding-top: 0;
-            transform: translateX(100%);
+            transform: translateX(-100%);
             transition: transform 0.25s ease;
-            box-shadow: -4px 0 14px rgba(0,0,0,0.3);
+            box-shadow: 4px 0 14px rgba(0,0,0,0.3);
         }
         .sidebar.open { transform: translateX(0); }
         .drawer-overlay {
@@ -237,25 +178,8 @@ else
             z-index: 1150;
         }
         .sidebar-header { padding-top: 15px; }
-        .sidebar .btn-close-drawer { display: block; }
-        .bottom-nav {
-            display: flex;
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            height: 60px;
-            background: #2c3e50;
-            border-top: 1px solid #3e5063;
-            z-index: 1000;
-            justify-content: space-around;
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-        .bn-item {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            flex: 1; color: #b8c4ce; text-decoration: none; font-size: 18px; gap: 2px;
-        }
-        .bn-item span { font-size: 10px; }
-        .bn-item.active { color: #007bff; }
-        .toast-notification { bottom: 70px; min-width: 240px; max-width: 92vw; }
+        .sidebar .btn-close-drawer { display: block; background: none; border: none; color: #ecf0f1; font-size: 20px; cursor: pointer; position: absolute; top: 12px; right: 12px; }
+        .toast-notification { bottom: 20px; min-width: 240px; max-width: 92vw; }
     }
 </style>
 
@@ -264,6 +188,39 @@ else
     private bool showUpdateBanner = false;
     private bool sidebarOpen = false;
     private string storeName = "BEN POS";
+    private string pageTitle = "";
+
+    private static readonly Dictionary<string, string> PageTitles = new()
+    {
+        ["/pos"] = "نقطة البيع",
+        ["/invoices"] = "الفواتير",
+        ["/persons"] = "العملاء والموردين",
+        ["/products"] = "إدارة المنتجات",
+        ["/purchases"] = "المشتريات",
+        ["/finance"] = "الإدارة المالية ولوحة التحكم",
+        ["/settings"] = "الإعدادات",
+        ["/users"] = "المستخدمون",
+        ["/login"] = "تسجيل الدخول",
+    };
+
+    private void UpdatePageTitle(string uri)
+    {
+        try
+        {
+            var path = new Uri(uri).AbsolutePath;
+            pageTitle = PageTitles.TryGetValue(path, out var t) ? t : storeName;
+        }
+        catch
+        {
+            pageTitle = storeName;
+        }
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        UpdatePageTitle(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
 
     private void ToggleSidebar() => sidebarOpen = !sidebarOpen;
     private void CloseSidebar() => sidebarOpen = false;
@@ -299,6 +256,8 @@ else
         // الاشتراك في الأحداث (Event-Driven)
         appState.OnConnectionStateChanged += HandleConnectionStateChanged;
         toastService.OnChange += HandleToastChange;
+        Navigation.LocationChanged += OnLocationChanged;
+        UpdatePageTitle(Navigation.Uri);
 
         // حساب العمليات المعلقة كل 30 ثانية
         await CalculatePendingSync();
@@ -402,6 +361,7 @@ else
         // تنظيف الاشتراكات لتفادي تسرب الذاكرة
         appState.OnConnectionStateChanged -= HandleConnectionStateChanged;
         toastService.OnChange -= HandleToastChange;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 
     private async Task CalculatePendingSync()
