@@ -121,8 +121,33 @@ namespace BENPOSDZ.Services
                 }
             };
             var pixelData = writer.Write(code);
-            byte[] png = PngEncoder.EncodeRgb(pixelData.Pixels, pixelData.Width, pixelData.Height);
+            // ZXing BarcodeWriterPixelData produit des pixels BGRA (4 octets/pixel).
+            // Notre encodeur PNG attend du RGB (3 octets/pixel) : conversion nécessaire
+            // pour éviter tout décalage/étirement des lignes de l'image.
+            byte[] rgb = BgraToRgb(pixelData.Pixels, pixelData.Width, pixelData.Height);
+            byte[] png = PngEncoder.EncodeRgb(rgb, pixelData.Width, pixelData.Height);
             return "data:image/png;base64," + Convert.ToBase64String(png);
+        }
+
+        // Conversion BGRA (B,G,R,A) → RGB (R,G,B) pixel par pixel
+        private static byte[] BgraToRgb(byte[] bgra, int width, int height)
+        {
+            int count = width * height;
+            var rgb = new byte[count * 3];
+            int src = 0, dst = 0;
+            for (int i = 0; i < count; i++)
+            {
+                byte b = bgra[src];
+                byte g = bgra[src + 1];
+                byte r = bgra[src + 2];
+                // a = bgra[src + 3] ignorée : fond blanc opaque
+                rgb[dst] = r;
+                rgb[dst + 1] = g;
+                rgb[dst + 2] = b;
+                src += 4;
+                dst += 3;
+            }
+            return rgb;
         }
 
         // بناء مستند الطباعة الكامل (ملصقات الباركود)
