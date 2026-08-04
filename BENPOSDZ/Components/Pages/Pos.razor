@@ -480,6 +480,7 @@
         if (ActiveCart == null || selectedProduct == null) return;
         if (modalQty <= 0) { await JS.InvokeVoidAsync("alert", "الكمية غير صالحة."); return; }
         if (modalQty > selectedProduct.Pro_Qty) { await JS.InvokeVoidAsync("alert", "الكمية أكبر من المخزون."); return; }
+        if (modalPrice < 0) { await JS.InvokeVoidAsync("alert", "السعر لا يمكن أن يكون سالباً."); return; }
 
         var existingItem = ActiveCart.Items.FirstOrDefault(c => c.ProductId == selectedProduct.Id && c.Price == modalPrice);
         if (existingItem != null)
@@ -718,6 +719,11 @@
         if (cart.PaidAmount < 0)
         {
             await JS.InvokeVoidAsync("alert", "المبلغ المدفوع لا يمكن أن يكون سالباً.");
+            return;
+        }
+        if (cart.Items.Any(i => i.Price <= 0))
+        {
+            await JS.InvokeVoidAsync("alert", "يوجد سعر غير صالح في السلة.");
             return;
         }
         if (cart.PaidAmount < cart.TotalAmount && cart.CustomerName == "Au Comptoir")

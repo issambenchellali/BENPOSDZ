@@ -327,6 +327,18 @@
         {
             string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
+            // فحص منطقي: مورد → الخزنة يجب أن تغطي مبلغ التسديد
+            if (selectedPerson.Person_Type == 2)
+            {
+                decimal cofferBalance = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Coffer LIMIT 1", transaction);
+                if (paymentAmount > cofferBalance)
+                {
+                    transaction.Rollback();
+                    toastService.ShowWarning("رصيد الخزنة (Coffer) غير كافٍ لتسديد هذا المبلغ!", "⚠️ الدفع");
+                    return;
+                }
+            }
+
             // 1. توزيع المبلغ على الفواتير غير المدفوعة (أقدم فاتورة أولاً)
             var unpaidInvoices = (await connection.QueryAsync<InvoiceModel>("SELECT * FROM Orders WHERE Person_ID = @Id AND Unpaid > 0 AND IsDeleted = 0 AND Order_Type IN (0,1,2) ORDER BY Order_Date ASC", new { Id = selectedPerson.Id }, transaction)).ToList();
             decimal remainingPayment = paymentAmount;
@@ -398,9 +410,20 @@
             // 2. المال: عميل → صندوق، مورد → خزنة
             int personType = await connection.ExecuteScalarAsync<int>("SELECT COALESCE(Person_Type, 1) FROM Persons WHERE Id = @Id", new { Id = historyPersonId }, transaction);
             if (personType == 2)
+            {
+                decimal cofferBalance = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Coffer LIMIT 1", transaction);
+                if (partialPayAmount > cofferBalance)
+                {
+                    transaction.Rollback();
+                    toastService.ShowWarning("رصيد الخزنة (Coffer) غير كافٍ لدفع هذا المبلغ!", "⚠️ الدفع");
+                    return;
+                }
                 await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount - @Amt, UpdatedAt = @Date", new { Amt = partialPayAmount, Date = dateNow }, transaction);
+            }
             else
+            {
                 await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount + @Amt, UpdatedAt = @Date", new { Amt = partialPayAmount, Date = dateNow }, transaction);
+            }
 
             // 3. تسجيل العملية في Historique
             await LogHistoryAsync(connection, transaction, historyPersonId, "دفعة جزئية", partialPayAmount, partialPayInvoice.Id,

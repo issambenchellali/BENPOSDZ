@@ -111,21 +111,56 @@
             return;
         }
 
+        // فحص منطقي: الكمية المرتجعة ضمن الحدود المسموحة لكل سلعة
+        foreach (var item in itemsToReturn)
+        {
+            if (item.ReturnQty < 0 || item.ReturnQty > item.Pro_Qty)
+            {
+                await JS.InvokeVoidAsync("alert", $"الكمية المرتجعة للسلعة \"{item.Pro_Name}\" غير صالحة (الحد الأقصى: {item.Pro_Qty}).");
+                return;
+            }
+        }
+
+        decimal returnTotal = TotalReturnAmount;
+
+        // فحص منطقي: لا يمكن إرجاع أكثر من قيمة الفاتورة الأصلية
+        var originalInvoice = invoicesList.FirstOrDefault(i => i.Id == selectedInvoiceId);
+        if (originalInvoice == null)
+        {
+            await JS.InvokeVoidAsync("alert", "الفاتورة المحددة غير موجودة.");
+            return;
+        }
+        if (returnTotal > originalInvoice.Price)
+        {
+            await JS.InvokeVoidAsync("alert", "المبلغ المسترجع يتجاوز قيمة الفاتورة الأصلية.");
+            return;
+        }
+
+        // فصل المبلغ المُعاد نقداً عن الدين المُعفى:
+        // لا نعيد نقداً من الصندوق إلا ما دفعه الزبون فعلاً، والباقي يُخصم من دينه
+        decimal originalUnpaid = originalInvoice.Unpaid;
+        decimal debtToReduce = Math.Min(returnTotal, originalUnpaid);
+        decimal cashRefund = returnTotal - debtToReduce;
+
+        // فحص منطقي: الصندوق يجب أن يغطي المبلغ المُعاد نقداً
+        decimal caisseBalance = 0;
+        using (var checkConn = dbService.CreateConnection())
+        {
+            caisseBalance = await checkConn.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Caisse LIMIT 1");
+        }
+        if (cashRefund > caisseBalance)
+        {
+            await JS.InvokeVoidAsync("alert", "رصيد الصندوق (Caisse) غير كافٍ لإعادة هذا المبلغ نقداً.");
+            return;
+        }
+
         using var connection = dbService.CreateConnection();
         using var transaction = connection.BeginTransaction();
-        
+
         try
         {
             string returnOrderId = Guid.NewGuid().ToString();
             string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-            decimal returnTotal = TotalReturnAmount;
-
-            // فصل المبلغ المُعاد نقداً عن الدين المُعفى:
-            // لا نعيد نقداً من الصندوق إلا ما دفعه الزبون فعلاً، والباقي يُخصم من دينه
-            var originalInvoice = invoicesList.FirstOrDefault(i => i.Id == selectedInvoiceId);
-            decimal originalUnpaid = originalInvoice?.Unpaid ?? 0;
-            decimal debtToReduce = Math.Min(returnTotal, originalUnpaid);
-            decimal cashRefund = returnTotal - debtToReduce;
 
             // 1. إنشاء فاتورة مرتجع (Order_Type = 3) وربطها بالفاتورة الأصلية عبر Parent_Order_Id
             //    Paid = المبلغ المسترجع نقداً، Unpaid = الدين المُعفى

@@ -371,6 +371,21 @@
             await JS.InvokeVoidAsync("alert", "المبلغ المدفوع لا يمكن أن يكون سالباً.");
             return;
         }
+        if (paidAmount > TotalAmount)
+        {
+            await JS.InvokeVoidAsync("alert", "المبلغ المدفوع للمورد لا يمكن أن يتجاوز إجمالي فاتورة الشراء.");
+            return;
+        }
+        if (paidAmount > 0)
+        {
+            using var cofferConn = dbService.CreateConnection();
+            decimal cofferBalance = await cofferConn.ExecuteScalarAsync<decimal>("SELECT COALESCE(Amount, 0) FROM Coffer LIMIT 1");
+            if (paidAmount > cofferBalance)
+            {
+                await JS.InvokeVoidAsync("alert", "رصيد الخزنة (Coffer) غير كافٍ لدفع هذا المبلغ للمورد.");
+                return;
+            }
+        }
 
         using var connection = dbService.CreateConnection();
         using var transaction = connection.BeginTransaction();
