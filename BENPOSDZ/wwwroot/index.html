@@ -57,42 +57,6 @@
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
 <script>
-    window.printBarcode = function(name, barcode) {
-        if (!barcode) {
-            alert("لا يمكن طباعة الباركود: المنتج لا يملك باركود.");
-            return;
-        }
-
-        // إنشاء iframe مخفي للطباعة المباشرة بدون نوافذ منبثقة
-        var printFrame = document.createElement('iframe');
-        printFrame.style.position = 'absolute';
-        printFrame.style.top = '-1000px';
-        printFrame.style.left = '-1000px';
-        document.body.appendChild(printFrame);
-
-        var doc = printFrame.contentWindow.document;
-        doc.open();
-        doc.write('<html><head><title>Print Barcode</title>');
-        doc.write('<style>body { text-align: center; font-family: Arial, sans-serif; margin-top: 20px;} img { margin-top: 10px;}</style>');
-        doc.write('</head><body>');
-        doc.write('<h3>' + name + '</h3>');
-        doc.write('<img src="https://barcode.tec-it.com/barcode.ashx?data=' + encodeURIComponent(barcode) + '&code=Code128" alt="Barcode" />');
-        doc.write('<p>' + barcode + '</p>');
-        doc.write('</body></html>');
-        doc.close();
-
-        // الانتظار قليلاً لتحميل الصورة ثم الطباعة
-        setTimeout(function() {
-            printFrame.contentWindow.focus();
-            printFrame.contentWindow.print();
-            // إزالة الـ iframe بعد الطباعة
-            setTimeout(function() { document.body.removeChild(printFrame); }, 500);
-        }, 1000);
-    };
-</script>
-
-
-<script>
     window.printDocument = function(docType, jsonData) {
         var data = JSON.parse(jsonData);
         var printFrame = document.createElement('iframe');
