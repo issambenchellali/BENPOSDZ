@@ -367,13 +367,17 @@
     private async Task PrintInvoice(string invId, string docType)
     {
         using var connection = dbService.CreateConnection();
-        var inv = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT o.*, p.Person_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id WHERE o.Id = @Id", new { Id = invId });
+        var inv = await connection.QueryFirstOrDefaultAsync<dynamic>(@"SELECT o.*, p.Person_Name, u.User_FullName, u.User_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id LEFT JOIN Users u ON o.User_ID = u.Id WHERE o.Id = @Id", new { Id = invId });
         if (inv == null) return;
 
         var details = await connection.QueryAsync<dynamic>(@"SELECT p.Pro_Name, od.Pro_Qty, od.Pro_Price FROM Order_Details od JOIN Products p ON od.Pro_ID = p.Id WHERE od.Order_ID = @Id", new { Id = invId });
 
         string customerName = "Au Comptoir";
         if (inv.Person_Name != null) customerName = (string)inv.Person_Name;
+
+        string cashierName = inv.User_FullName != null ? (string)inv.User_FullName : (inv.User_Name != null ? (string)inv.User_Name : "");
+        if (string.IsNullOrWhiteSpace(cashierName))
+            cashierName = authService.CurrentUser?.User_FullName ?? authService.CurrentUser?.User_Name ?? "المدير";
 
         string title = docType switch { "receipt" => "وصل", "delivery" => "بون تسليم", _ => "فاتورة" };
 
@@ -384,6 +388,7 @@
             InvoiceNumber = invId.Substring(0, 8),
             Date = Convert.ToDateTime(inv.Order_Date).ToString("yyyy-MM-dd HH:mm"),
             Customer = customerName,
+            Cashier = cashierName,
             Items = details.Select(d => new PrintTemplateService.PrintItem((string)d.Pro_Name, (decimal)d.Pro_Qty, (decimal)d.Pro_Price, (decimal)(d.Pro_Qty * d.Pro_Price))).ToList(),
             Total = (decimal)inv.Price,
             Paid = (decimal)inv.Paid,

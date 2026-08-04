@@ -14,6 +14,7 @@
 @inject DataTransferService dataTransferService
 @inject CloudSyncService cloudSyncService
 @inject UpdateService updateService
+@implements IDisposable
 
 <h2>الإعدادات العامة</h2>
 
@@ -968,6 +969,7 @@ else if (currentTab == "update")
     protected override async Task OnInitializedAsync()
     {
         if (!authService.IsAdmin) { Nav.NavigateTo("/pos"); return; }
+        appState.OnProductTypesChanged += HandleProductTypesChanged;
         await LoadSettings();
         await LoadProductTypes();
         CheckLicenseStatus();
@@ -1121,23 +1123,36 @@ else if (currentTab == "update")
             using var connection = dbService.CreateConnection();
             var types = (await connection.QueryAsync<ProductTypeModel>("SELECT * FROM Product_Types WHERE IsDeleted = 0")).ToList();
             await LoadTypeCountsAsync(connection, types);
+            productTypes = types;
             appState.RefreshProductTypes(types);
         }
-        catch (Exception ex)
+        catch
         {
             try
             {
-                using var localConn = dbService.CreateConnection();
+                using var localConn = dbService.CreateLocalConnection();
                 var types = (await localConn.QueryAsync<ProductTypeModel>("SELECT * FROM Product_Types WHERE IsDeleted = 0")).ToList();
                 await LoadTypeCountsAsync(localConn, types);
+                productTypes = types;
                 appState.RefreshProductTypes(types);
                 toastService.ShowWarning("يتم عرض أنواع مخزنة محلياً (الشبكة غير متاحة)", "⚠️ الشبكة غير متاحة");
             }
-            catch
+            catch (Exception localEx)
             {
-                toastService.ShowError("فشل تحميل الأنواع: " + ex.Message, "❌ تحميل الأنواع");
+                toastService.ShowError("فشل تحميل الأنواع: " + localEx.Message, "❌ تحميل الأنواع");
             }
         }
+    }
+
+    private void HandleProductTypesChanged()
+    {
+        productTypes = appState.CachedProductTypes;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        appState.OnProductTypesChanged -= HandleProductTypesChanged;
     }
 
     private async Task LoadTypeCountsAsync(IDbConnection connection, List<ProductTypeModel> types)
