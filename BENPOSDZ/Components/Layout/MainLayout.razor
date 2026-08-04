@@ -58,7 +58,7 @@
             }
 
             <NavMenu Open="@sidebarOpen" OnClose="CloseSidebar" OnSync="SyncData" OnLogout="Logout"
-                     StoreName="@storeName" PendingSyncCount="@pendingSyncCount" />
+                     PendingSyncCount="@pendingSyncCount" />
 
             <main class="main-content">
                 <ErrorBoundary>
@@ -187,7 +187,7 @@ else
     private int pendingSyncCount = 0;
     private bool showUpdateBanner = false;
     private bool sidebarOpen = false;
-    private string storeName = "BEN POS";
+    private string storeName = "BENPOS";
     private string pageTitle = "";
 
     private static readonly Dictionary<string, string> PageTitles = new()

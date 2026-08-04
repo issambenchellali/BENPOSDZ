@@ -5,7 +5,7 @@
 <nav class="sidebar @(Open ? "open" : "")">
     <div class="sidebar-header">
         <button class="btn-close-drawer" @onclick="CloseDrawer" aria-label="إغلاق القائمة">✖</button>
-        <h2>@StoreName</h2>
+        <h2>BENPOS</h2>
         <div class="user-info">
             <span>👤 @authService.CurrentUser?.User_FullName</span>
             <small class="connection-badge" style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
@@ -38,7 +38,10 @@
         {
             <li><NavLink href="/purchases" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🚚 المشتريات</NavLink></li>
         }
-        <li><NavLink href="/finance" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
+        @if (authService.IsLicensed)
+        {
+            <li><NavLink href="/finance" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
+        }
         @if (authService.IsAdmin)
         {
             <li><NavLink href="/settings" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">⚙️ الإعدادات</NavLink></li>
@@ -55,7 +58,6 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnSync { get; set; }
     [Parameter] public EventCallback OnLogout { get; set; }
-    [Parameter] public string StoreName { get; set; } = "BEN POS";
     [Parameter] public int PendingSyncCount { get; set; }
 
     private async Task CloseDrawer() => await OnClose.InvokeAsync();
