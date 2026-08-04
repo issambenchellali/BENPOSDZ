@@ -9,6 +9,26 @@
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="BENPOSDZ.styles.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <style>
+        /* إظهار أخطاء Blazor غير المعالجة بدلاً من صفحة فارغة صامتة */
+        #blazor-error-ui {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: #dc3545;
+            color: #fff;
+            padding: 14px 20px;
+            text-align: center;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            direction: rtl;
+            z-index: 99999;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        #blazor-error-ui .reload { color: #ffeeba; margin: 0 10px; }
+        #blazor-error-ui .dismiss { position: absolute; top: 6px; left: 12px; cursor: pointer; background: none; border: none; color: #fff; font-size: 16px; }
+        #blazor-error-ui .err-msg { display: block; margin-top: 6px; font-size: 12px; opacity: 0.9; }
+    </style>
 </head>
 
 <body>
@@ -18,10 +38,22 @@
     <div id="app">Loading...</div>
 
     <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="" class="reload">Reload</a>
+        حدث خطأ غير متوقع.
+        <a href="" class="reload">إعادة تحميل</a>
         <a class="dismiss">🗙</a>
+        <span class="err-msg" id="blazor-error-msg"></span>
     </div>
+
+    <script>
+        // التقاط الأخطاء غير المعالجة وإظهارها بدلاً من صفحة فارغة
+        window.addEventListener('error', function (e) {
+            var msg = (e && e.message) ? e.message : (e && e.error && e.error.message ? e.error.message : 'خطأ غير متوقع');
+            var el = document.getElementById('blazor-error-ui');
+            var m = document.getElementById('blazor-error-msg');
+            if (m) m.textContent = msg;
+            if (el) el.style.display = 'block';
+        });
+    </script>
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
 <script>

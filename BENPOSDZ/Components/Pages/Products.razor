@@ -11,6 +11,14 @@
 
 <h2>إدارة المنتجات</h2>
 
+@if (!string.IsNullOrEmpty(loadError))
+{
+    <div class="page-error">
+        <strong>⚠️ تعذر تحميل البيانات:</strong> @loadError
+        <button class="btn-save" style="width:auto; margin-top:8px;" @onclick="ReloadProducts">إعادة المحاولة</button>
+    </div>
+}
+
 
 <div class="top-bar">
     <input type="text" @bind="searchTerm" @bind:event="oninput" @bind:after="LoadProductsAsync" placeholder="🔍 ابحث بالاسم أو الباركود..." class="search-input"/>
@@ -196,6 +204,7 @@
 }
 
 <style>
+    .page-error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 14px 18px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
     .top-bar { display: flex; justify-content: space-between; margin-bottom: 15px; }
     .search-input { width: 300px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
     .alert { padding: 15px; background: #fff3cd; border: 1px solid #ffe69c; border-radius: 5px; margin-bottom: 15px; }
@@ -246,6 +255,7 @@
     private string searchTerm = "";
     private IEnumerable<ProductViewModel> productsList = new List<ProductViewModel>();
     private List<ProductViewModel> lowStockItems = new List<ProductViewModel>();
+    private string loadError = "";
     private bool showModal = false;
     private bool isEditing = false;
     private bool hasExpiration = false;
@@ -257,6 +267,7 @@
     {
         searchCts?.Cancel();
         searchCts = new CancellationTokenSource();
+        loadError = "";
         try
         {
             await Task.Delay(200, searchCts.Token);
@@ -279,7 +290,19 @@
             productsList = rawProducts;
             lowStockItems = productsList.Where(p => p.Pro_QtyMin > 0 && p.Pro_Qty <= p.Pro_QtyMin).ToList();
         }
-        catch (TaskCanceledException) { }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ReloadProducts()
+    {
+        loadError = "";
+        await LoadProductsAsync();
+        toastService.ShowSuccess("تمت إعادة تحميل المنتجات", "📦 المنتجات");
     }
 
     private void OpenAddModal()
@@ -447,9 +470,16 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // قراءة الأنواع من الكاش المركزي
-        productTypes = appState.CachedProductTypes;
-        await LoadProductsAsync();
+        try
+        {
+            // قراءة الأنواع من الكاش المركزي
+            productTypes = appState.CachedProductTypes;
+            await LoadProductsAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
     }
 
     // أضف هذا الحقل داخل كلاس ProductInputModel

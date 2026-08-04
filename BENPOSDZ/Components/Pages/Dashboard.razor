@@ -8,6 +8,13 @@
 @inject ToastService toastService
 
 <div class="fin-page">
+    @if (!string.IsNullOrEmpty(loadError))
+    {
+        <div class="page-error">
+            <strong>⚠️ تعذر تحميل البيانات:</strong> @loadError
+            <button class="fin-btn ref" style="width:auto; margin-top:8px;" @onclick="ReloadAllAsync">إعادة المحاولة</button>
+        </div>
+    }
     <div class="fin-header">
         <div>
             <h1>💰 الإدارة المالية ولوحة التحكم</h1>
@@ -289,6 +296,7 @@
 
 <style>
     .fin-page { direction: rtl; }
+    .page-error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
     .fin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 10px; }
     .fin-header h1 { margin: 0; font-size: 24px; color: #2c3e50; }
     .fin-subtitle { margin: 4px 0 0 0; color: #888; font-size: 13px; }
@@ -371,6 +379,7 @@
 
 @code {
     private bool settingsShowCaisse = false;
+    private string loadError = "";
     private decimal caisseAmount = 0;
     private decimal cofferAmount = 0;
     private decimal todayExpenses = 0;
@@ -398,20 +407,28 @@
     {
         if (!authService.IsLicensed) { Nav.NavigateTo("/pos"); return; }
 
-        if (authService.IsAdmin)
+        try
         {
-            using var localConn = dbService.CreateLocalConnection();
-            var settingVal = await localConn.QueryFirstOrDefaultAsync<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ShowCaisseToVendeur'");
-            settingsShowCaisse = (settingVal == "true");
-        }
+            if (authService.IsAdmin)
+            {
+                using var localConn = dbService.CreateLocalConnection();
+                var settingVal = await localConn.QueryFirstOrDefaultAsync<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ShowCaisseToVendeur'");
+                settingsShowCaisse = (settingVal == "true");
+            }
 
-        await LoadAllAsync();
+            await LoadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
     }
 
     private async Task LoadAllAsync()
     {
         try
         {
+            loadError = "";
             using var connection = dbService.CreateConnection();
 
             await QueryProfiler.TimeAsync(dbService, "Dashboard.Balances", async () =>
@@ -452,7 +469,7 @@
                 string recentSql = @"SELECT o.Order_Date, o.Price, CASE WHEN p.Person_Name IS NULL THEN 'Au Comptoir' ELSE p.Person_Name END as Person_Name FROM Orders o LEFT JOIN Persons p ON o.Person_ID = p.Id WHERE o.IsDeleted = 0 AND o.Order_Type IN (0,1) ORDER BY o.Order_Date DESC LIMIT 5";
                 recentInvoices = (await connection.QueryAsync<RecentInvoiceModel>(recentSql)).ToList();
 
-                string expiredSql = "SELECT Pro_Name, Pro_date_exp FROM Products WHERE IsDeleted = 0 AND Pro_date_exp IS NOT NULL AND date(Pro_date_exp) < date('now') LIMIT 10";
+                string expiredSql = "SELECT Pro_Name, Pro_date_exp FROM Products WHERE IsDeleted = 0 AND Pro_date_exp IS NOT NULL AND date(Pro_date_exp) < " + (dbService.DBMode == "LAN" ? "CURDATE()" : "date('now')") + " LIMIT 10";
                 expiredProducts = (await connection.QueryAsync<ExpiredProductModel>(expiredSql)).ToList();
             });
 
@@ -460,6 +477,7 @@
         }
         catch (Exception ex)
         {
+            loadError = ex.Message;
             toastService.ShowError("خطأ في تحميل البيانات: " + ex.Message, "❌ لوحة التحكم");
         }
     }
@@ -494,6 +512,12 @@
     {
         using var connection = dbService.CreateConnection();
         expensesList = (await connection.QueryAsync<ExpenseModel>("SELECT * FROM Expenses WHERE IsDeleted = 0 ORDER BY Expn_Date DESC LIMIT 50")).ToList();
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        loadError = "";
+        await LoadAllAsync();
     }
 
     private void OpenTransferModal() { transferAmount = caisseAmount; showTransferModal = true; }
