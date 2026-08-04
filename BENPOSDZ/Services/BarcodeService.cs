@@ -8,11 +8,23 @@ namespace BENPOSDZ.Services
     // خيارات طباعة الباركود (تُحفظ في إعدادات التطبيق AppSettings)
     public class BarcodePrintOptions
     {
-        public int Width { get; set; } = 220;
-        public int Height { get; set; } = 80;
+        public string Type { get; set; } = "Code128";   // Code128 | EAN-13 | QR Code
+        public string Size { get; set; } = "Medium";     // Small | Medium | Large
         public bool ShowName { get; set; } = true;
         public bool ShowPrice { get; set; } = true;
+        public bool ShowQuantity { get; set; } = false;
+        public bool ShowHigherPrice { get; set; } = false;
         public int Copies { get; set; } = 1;
+    }
+
+    // بيانات منتج يُطبع باركوده (تمرر من نقاط الاستدعاء)
+    public class BarcodePrintData
+    {
+        public string Name { get; set; } = "";
+        public string Code { get; set; } = "";
+        public decimal? Price { get; set; }
+        public decimal? HigherPrice { get; set; }
+        public decimal? Quantity { get; set; }
     }
 
     // توليد الباركود محلياً عبر ZXing (بدون أي خدمة خارجية) وترميزه كصورة PNG مضمّنة Base64
@@ -28,18 +40,18 @@ namespace BENPOSDZ.Services
             try
             {
                 using var conn = _db.CreateLocalConnection();
-                var rows = conn.Query("SELECT `Key`, `Value` FROM AppSettings WHERE `Key` IN ('BarcodeWidth','BarcodeHeight','BarcodeShowName','BarcodeShowPrice','BarcodeCopies')");
+                var rows = conn.Query("SELECT `Key`, `Value` FROM AppSettings WHERE `Key` IN ('BarcodeType','BarcodeSize','BarcodeShowName','BarcodeShowPrice','BarcodeShowQuantity','BarcodeShowHigherPrice','BarcodeCopies')");
                 foreach (var r in rows)
                 {
                     string key = (string)r.Key;
                     string val = (string)r.Value;
                     switch (key)
                     {
-                        case "BarcodeWidth" when int.TryParse(val, out int w) && w >= 100 && w <= 500:
-                            opts.Width = w;
+                        case "BarcodeType":
+                            if (val == "EAN-13" || val == "QR Code" || val == "Code128") opts.Type = val;
                             break;
-                        case "BarcodeHeight" when int.TryParse(val, out int h) && h >= 40 && h <= 200:
-                            opts.Height = h;
+                        case "BarcodeSize":
+                            if (val == "Small" || val == "Large") opts.Size = val;
                             break;
                         case "BarcodeShowName":
                             opts.ShowName = val != "false";
@@ -47,7 +59,13 @@ namespace BENPOSDZ.Services
                         case "BarcodeShowPrice":
                             opts.ShowPrice = val != "false";
                             break;
-                        case "BarcodeCopies" when int.TryParse(val, out int c) && c >= 1 && c <= 20:
+                        case "BarcodeShowQuantity":
+                            opts.ShowQuantity = val == "true";
+                            break;
+                        case "BarcodeShowHigherPrice":
+                            opts.ShowHigherPrice = val == "true";
+                            break;
+                        case "BarcodeCopies" when int.TryParse(val, out int c) && c >= 1 && c <= 5:
                             opts.Copies = c;
                             break;
                     }
@@ -57,17 +75,48 @@ namespace BENPOSDZ.Services
             return opts;
         }
 
-        // توليد صورة الباركود محلياً (CODE_128) وإرجاعها كـ Data URI (Base64 PNG)
-        public string GenerateBarcodeDataUri(string code, int width, int height)
+        // تحويل الإعداد إلى أبعاد البكسل الفعلية حسب النوع والحجم
+        public static (int Width, int Height) GetSizePixels(string size, string type)
+        {
+            bool qr = type == "QR Code";
+            int w = size switch { "Small" => qr ? 120 : 160, "Large" => qr ? 240 : 300, _ => qr ? 160 : 220 };
+            int h = size switch { "Small" => qr ? 120 : 60, "Large" => qr ? 240 : 110, _ => qr ? 160 : 80 };
+            return (w, h);
+        }
+
+        // توليد صورة الباركود محلياً (Code128 / EAN-13 / QR) وإرجاعها كـ Data URI (Base64 PNG)
+        public string GenerateBarcodeDataUri(string code, string type, int width, int height)
+        {
+            BarcodeFormat format = type switch
+            {
+                "EAN-13" => BarcodeFormat.EAN_13,
+                "QR Code" => BarcodeFormat.QR_CODE,
+                _ => BarcodeFormat.CODE_128
+            };
+            // EAN-13 يحتاج 12 أو 13 رقماً فقط — وإلا نرجع لـ Code128
+            if (format == BarcodeFormat.EAN_13 && !(code.All(char.IsDigit) && code.Length is 12 or 13))
+                format = BarcodeFormat.CODE_128;
+
+            try
+            {
+                return Encode(format, code, width, height);
+            }
+            catch
+            {
+                return Encode(BarcodeFormat.CODE_128, code, width, height);
+            }
+        }
+
+        private static string Encode(BarcodeFormat format, string code, int width, int height)
         {
             var writer = new BarcodeWriterPixelData
             {
-                Format = BarcodeFormat.CODE_128,
+                Format = format,
                 Options = new ZXing.Common.EncodingOptions
                 {
                     Width = width,
                     Height = height,
-                    Margin = 4,
+                    Margin = format == BarcodeFormat.QR_CODE ? 1 : 4,
                     PureBarcode = true
                 }
             };
@@ -77,7 +126,7 @@ namespace BENPOSDZ.Services
         }
 
         // بناء مستند الطباعة الكامل (ملصقات الباركود)
-        public string BuildPrintDocument(string name, string code, decimal? price, BarcodePrintOptions opts, string imageUri)
+        public string BuildPrintDocument(string name, string code, decimal? price, decimal? higherPrice, decimal? quantity, BarcodePrintOptions opts, string imageUri)
         {
             var sb = new StringBuilder();
             sb.AppendLine("<!DOCTYPE html><html dir=\"rtl\" lang=\"ar\"><head><meta charset=\"utf-8\"/><title>باركود</title><style>");
@@ -85,15 +134,23 @@ namespace BENPOSDZ.Services
             sb.AppendLine(".barcode-label { display: inline-block; text-align: center; border: 1px dashed #999; border-radius: 6px; padding: 10px 14px; margin: 6px; page-break-inside: avoid; vertical-align: top; }");
             sb.AppendLine(".barcode-name { font-size: 14px; font-weight: bold; margin-bottom: 4px; max-width: 240px; }");
             sb.AppendLine(".barcode-img { max-width: 100%; height: auto; display: block; margin: 0 auto; }");
-            sb.AppendLine(".barcode-code { font-size: 13px; letter-spacing: 1px; margin-top: 3px; direction: ltr; }");
+            sb.AppendLine(".barcode-code { font-size: 13px; letter-spacing: 1px; margin-top: 3px; direction: ltr; word-break: break-all; }");
             sb.AppendLine(".barcode-price { font-size: 15px; font-weight: bold; color: #000; margin-top: 3px; }");
+            sb.AppendLine(".barcode-higher { font-size: 13px; color: #333; margin-top: 2px; }");
+            sb.AppendLine(".barcode-qty { font-size: 13px; color: #333; margin-top: 2px; }");
             sb.AppendLine("</style></head><body>");
 
             string nameBlock = opts.ShowName && !string.IsNullOrWhiteSpace(name)
                 ? $"<div class=\"barcode-name\">{System.Net.WebUtility.HtmlEncode(name)}</div>"
                 : "";
             string priceBlock = opts.ShowPrice && price.HasValue
-                ? $"<div class=\"barcode-price\">{price.Value:0.00} د.ج</div>"
+                ? $"<div class=\"barcode-price\">السعر: {price.Value:0.00} د.ج</div>"
+                : "";
+            string higherBlock = opts.ShowHigherPrice && higherPrice.HasValue
+                ? $"<div class=\"barcode-higher\">سعر التجزئة: {higherPrice.Value:0.00} د.ج</div>"
+                : "";
+            string qtyBlock = opts.ShowQuantity && quantity.HasValue
+                ? $"<div class=\"barcode-qty\">الكمية: {quantity.Value:0.##}</div>"
                 : "";
 
             for (int i = 0; i < opts.Copies; i++)
@@ -103,6 +160,8 @@ namespace BENPOSDZ.Services
                 sb.AppendLine($"<img class=\"barcode-img\" src=\"{imageUri}\" alt=\"barcode\" />");
                 sb.AppendLine($"<div class=\"barcode-code\">{System.Net.WebUtility.HtmlEncode(code)}</div>");
                 sb.AppendLine(priceBlock);
+                sb.AppendLine(higherBlock);
+                sb.AppendLine(qtyBlock);
                 sb.AppendLine("</div>");
             }
 

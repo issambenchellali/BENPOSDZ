@@ -23,12 +23,13 @@ namespace BENPOSDZ.Services
         }
 
         // طباعة باركود محلياً عبر ZXing (بدون أي خدمة خارجية) مع خيارات التخصيص من الإعدادات
-        public async Task PrintBarcodeAsync(IJSRuntime js, string name, string barcode, decimal? price = null)
+        public async Task PrintBarcodeAsync(IJSRuntime js, BarcodePrintData data)
         {
-            if (string.IsNullOrWhiteSpace(barcode)) return;
+            if (data == null || string.IsNullOrWhiteSpace(data.Code)) return;
             var opts = _barcodeService.LoadOptions();
-            string imageUri = _barcodeService.GenerateBarcodeDataUri(barcode, opts.Width, opts.Height);
-            string html = _barcodeService.BuildPrintDocument(name, barcode, price, opts, imageUri);
+            var (w, h) = BarcodeService.GetSizePixels(opts.Size, opts.Type);
+            string imageUri = _barcodeService.GenerateBarcodeDataUri(data.Code, opts.Type, w, h);
+            string html = _barcodeService.BuildPrintDocument(data.Name, data.Code, data.Price, data.HigherPrice, data.Quantity, opts, imageUri);
 #if ANDROID
             PrintOnAndroid(html);
             await Task.CompletedTask;

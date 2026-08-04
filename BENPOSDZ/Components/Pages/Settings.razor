@@ -14,7 +14,8 @@
 @inject DataTransferService dataTransferService
 @inject CloudSyncService cloudSyncService
 @inject UpdateService updateService
-@inject NetworkScanner scanner
+    @inject NetworkScanner scanner
+    @inject BarcodeService barcodeService
 @implements IDisposable
 
 <h2>الإعدادات العامة</h2>
@@ -23,6 +24,7 @@
     <button class="tab-btn @(currentTab == "store" ? "active" : "")" @onclick='() => SwitchTab("store")'>🏪 المتجر</button>
     <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
     <button class="tab-btn @(currentTab == "print" ? "active" : "")" @onclick='() => SwitchTab("print")'>🖨️ الطباعة</button>
+    <button class="tab-btn @(currentTab == "barcode" ? "active" : "")" @onclick='() => SwitchTab("barcode")'>🏷️ الباركود</button>
     <button class="tab-btn @(currentTab == "conn" ? "active" : "")" @onclick='() => SwitchTab("conn")'>🌐 الاتصال</button>
     <button class="tab-btn @(currentTab == "backup" ? "active" : "")" @onclick='() => SwitchTab("backup")'>💾 النسخ الاحتياطي</button>
     <button class="tab-btn @(currentTab == "transfer" ? "active" : "")" @onclick='() => SwitchTab("transfer")'>🔄 نقل البيانات</button>
@@ -308,32 +310,68 @@ else if (currentTab == "print")
             <button class="btn-save" style="background:#17a2b8;" @onclick="SaveSettings">حفظ الرأس/التذييل</button>
         </div>
     </div>
+}
+else if (currentTab == "barcode")
+{
+    <style>
+        .barcode-settings { display: flex; flex-direction: column; gap: 14px; }
+        .barcode-settings .form-group { margin-bottom: 0; }
+        .barcode-options-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+        .barcode-settings .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+        .barcode-settings .checkbox-row input { width: 20px; height: 20px; }
+        .barcode-preview-box { border: 1px solid #ddd; border-radius: 8px; background: #fff; padding: 16px; text-align: center; }
+        .barcode-preview-box img { max-width: 100%; height: auto; }
+        .barcode-preview-box .bp-name { font-size: 14px; font-weight: bold; margin-top: 6px; }
+        .barcode-preview-box .bp-code { font-size: 13px; direction: ltr; letter-spacing: 1px; color: #333; }
+        .barcode-preview-box .bp-price { font-size: 15px; font-weight: bold; color: #000; }
+    </style>
 
-    <div class="settings-card print-editor-card" style="margin-top:15px;">
+    <div class="settings-card print-editor-card">
         <h3>🏷️ إعدادات طباعة الباركود</h3>
-        <p class="print-hint">يُولَّد الباركود محلياً (ZXing) بدون إنترنت — يُطبَّق على أزرار الطباعة في قائمة المنتجات ونقطة البيع.</p>
-        <div class="form-row">
-            <div class="form-group">
-                <label>عرض الباركود (بكسل)</label>
-                <input type="number" min="100" max="500" @bind="settings[K_BarcodeWidth]" />
+        <p class="print-hint">يُولَّد الباركود محلياً (ZXing) بدون إنترنت — تُطبَع عبر أزرار الباركود في نقطة البيع ونافذة المنتجات.</p>
+
+        <div class="barcode-settings">
+            <div class="barcode-options-grid">
+                <div class="form-group">
+                    <label>نوع الباركود</label>
+                    <select @bind="settings[K_BarcodeType]">
+                        <option value="Code128">Code 128</option>
+                        <option value="EAN-13">EAN-13</option>
+                        <option value="QR Code">QR Code</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>حجم الباركود</label>
+                    <select @bind="settings[K_BarcodeSize]">
+                        <option value="Small">صغير</option>
+                        <option value="Medium">متوسط</option>
+                        <option value="Large">كبير</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>عدد النسخ لكل منتج (1-5)</label>
+                    <input type="number" min="1" max="5" @bind="settings[K_BarcodeCopies]" />
+                </div>
             </div>
-            <div class="form-group">
-                <label>ارتفاع الباركود (بكسل)</label>
-                <input type="number" min="40" max="200" @bind="settings[K_BarcodeHeight]" />
+
+            <div class="barcode-options-grid">
+                <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowName" @onchange="ToggleBarcodeShowName" /> إظهار اسم المنتج</label>
+                <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowPrice" @onchange="ToggleBarcodeShowPrice" /> إظهار سعر التجزئة</label>
+                <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowQuantity" @onchange="ToggleBarcodeShowQuantity" /> إظهار الكمية</label>
+                <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowHigherPrice" @onchange="ToggleBarcodeShowHigherPrice" /> إظهار سعر التجزئة الأعلى</label>
+            </div>
+
+            <div class="barcode-preview-box">
+                <label>معاينة:</label>
+                <div><img src="@barcodePreviewUri" alt="معاينة الباركود" /></div>
+                <div class="bp-name">@(BarcodeShowName ? "اسم المنتج التجريبي" : "")</div>
+                <div class="bp-code">1234567890</div>
+                <div class="bp-price">@(BarcodeShowPrice ? "150.00 د.ج" : "")</div>
             </div>
         </div>
-        <div class="form-group">
-            <label>عدد النسخ لكل منتج</label>
-            <input type="number" min="1" max="20" @bind="settings[K_BarcodeCopies]" />
-        </div>
-        <div class="form-group">
-            <label><input type="checkbox" checked="@BarcodeShowName" @onchange="ToggleBarcodeShowName" /> إظهار اسم المنتج</label>
-        </div>
-        <div class="form-group">
-            <label><input type="checkbox" checked="@BarcodeShowPrice" @onchange="ToggleBarcodeShowPrice" /> إظهار سعر التجزئة تحت الباركود</label>
-        </div>
-        <div class="print-actions">
-            <button class="btn-save" @onclick="SaveSettings">💾 حفظ إعدادات الباركود</button>
+
+        <div class="print-actions" style="margin-top:15px;">
+            <button class="btn-save" @onclick="SaveBarcodeSettings">💾 حفظ إعدادات الباركود</button>
         </div>
     </div>
 }
@@ -756,10 +794,12 @@ else if (currentTab == "update")
     private const string K_StoreNameLocked = "StoreNameLocked";
     private const string K_ShowCaisseToVendeur = "ShowCaisseToVendeur";
     private const string K_SellNoPrint = "SellNoPrint";
-    private const string K_BarcodeWidth = "BarcodeWidth";
-    private const string K_BarcodeHeight = "BarcodeHeight";
+    private const string K_BarcodeType = "BarcodeType";
+    private const string K_BarcodeSize = "BarcodeSize";
     private const string K_BarcodeShowName = "BarcodeShowName";
     private const string K_BarcodeShowPrice = "BarcodeShowPrice";
+    private const string K_BarcodeShowQuantity = "BarcodeShowQuantity";
+    private const string K_BarcodeShowHigherPrice = "BarcodeShowHigherPrice";
     private const string K_BarcodeCopies = "BarcodeCopies";
     private string lastBackupPath = "";
     private bool wipeResetStock = false;
@@ -1009,6 +1049,33 @@ else if (currentTab == "update")
 
     private bool BarcodeShowName => !settings.ContainsKey(K_BarcodeShowName) || settings[K_BarcodeShowName] != "false";
     private bool BarcodeShowPrice => !settings.ContainsKey(K_BarcodeShowPrice) || settings[K_BarcodeShowPrice] != "false";
+    private bool BarcodeShowQuantity => settings.ContainsKey(K_BarcodeShowQuantity) && settings[K_BarcodeShowQuantity] == "true";
+    private bool BarcodeShowHigherPrice => settings.ContainsKey(K_BarcodeShowHigherPrice) && settings[K_BarcodeShowHigherPrice] == "true";
+
+    private string barcodePreviewUri = "";
+
+    private void RefreshBarcodePreview()
+    {
+        try
+        {
+            var opts = new BarcodePrintOptions
+            {
+                Type = settings.ContainsKey(K_BarcodeType) ? settings[K_BarcodeType] : "Code128",
+                Size = settings.ContainsKey(K_BarcodeSize) ? settings[K_BarcodeSize] : "Medium",
+                ShowName = BarcodeShowName,
+                ShowPrice = BarcodeShowPrice,
+                ShowQuantity = BarcodeShowQuantity,
+                ShowHigherPrice = BarcodeShowHigherPrice,
+                Copies = 1
+            };
+            var (w, h) = BarcodeService.GetSizePixels(opts.Size, opts.Type);
+            barcodePreviewUri = barcodeService.GenerateBarcodeDataUri("1234567890", opts.Type, w, h);
+        }
+        catch
+        {
+            barcodePreviewUri = "";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -1091,6 +1158,10 @@ else if (currentTab == "update")
             currentLayout = printService.GetLayout(templateDocType);
             RefreshPreview();
         }
+        if (tab == "barcode")
+        {
+            RefreshBarcodePreview();
+        }
     }
 
     private async Task LoadSettings()
@@ -1116,10 +1187,12 @@ else if (currentTab == "update")
         if (!settings.ContainsKey(K_StoreNameLocked)) settings[K_StoreNameLocked] = "false";
         if (!settings.ContainsKey(K_ShowCaisseToVendeur)) settings[K_ShowCaisseToVendeur] = "false";
         if (!settings.ContainsKey(K_SellNoPrint)) settings[K_SellNoPrint] = "false";
-        if (!settings.ContainsKey(K_BarcodeWidth)) settings[K_BarcodeWidth] = "220";
-        if (!settings.ContainsKey(K_BarcodeHeight)) settings[K_BarcodeHeight] = "80";
+        if (!settings.ContainsKey(K_BarcodeType)) settings[K_BarcodeType] = "Code128";
+        if (!settings.ContainsKey(K_BarcodeSize)) settings[K_BarcodeSize] = "Medium";
         if (!settings.ContainsKey(K_BarcodeShowName)) settings[K_BarcodeShowName] = "true";
         if (!settings.ContainsKey(K_BarcodeShowPrice)) settings[K_BarcodeShowPrice] = "true";
+        if (!settings.ContainsKey(K_BarcodeShowQuantity)) settings[K_BarcodeShowQuantity] = "false";
+        if (!settings.ContainsKey(K_BarcodeShowHigherPrice)) settings[K_BarcodeShowHigherPrice] = "false";
         if (!settings.ContainsKey(K_BarcodeCopies)) settings[K_BarcodeCopies] = "1";
     }
 
@@ -1168,13 +1241,44 @@ else if (currentTab == "update")
     private async Task ToggleBarcodeShowName(Microsoft.AspNetCore.Components.ChangeEventArgs e)
     {
         settings[K_BarcodeShowName] = (e.Value is bool val && val) ? "true" : "false";
+        RefreshBarcodePreview();
         await SaveBarcodeOption();
     }
 
     private async Task ToggleBarcodeShowPrice(Microsoft.AspNetCore.Components.ChangeEventArgs e)
     {
         settings[K_BarcodeShowPrice] = (e.Value is bool val && val) ? "true" : "false";
+        RefreshBarcodePreview();
         await SaveBarcodeOption();
+    }
+
+    private async Task ToggleBarcodeShowQuantity(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_BarcodeShowQuantity] = (e.Value is bool val && val) ? "true" : "false";
+        RefreshBarcodePreview();
+        await SaveBarcodeOption();
+    }
+
+    private async Task ToggleBarcodeShowHigherPrice(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_BarcodeShowHigherPrice] = (e.Value is bool val && val) ? "true" : "false";
+        RefreshBarcodePreview();
+        await SaveBarcodeOption();
+    }
+
+    private async Task SaveBarcodeSettings()
+    {
+        RefreshBarcodePreview();
+        try
+        {
+            bool success = await settingsRepository.SaveAllAsync(settings);
+            if (success)
+                toastService.ShowSuccess("تم حفظ إعدادات الباركود", "🏷️ الباركود");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حفظ الإعدادات: " + ex.Message, "❌ الباركود");
+        }
     }
 
     private async Task SaveBarcodeOption()

@@ -102,7 +102,11 @@ h1:focus {
     table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
     .machine-id-box h2 { font-size: 18px !important; }
     h2 { font-size: 20px; }
-    .modal-overlay { align-items: flex-end !important; }
-    .modal-box { max-height: 88vh !important; border-radius: 12px 12px 0 0 !important; }
+    .modal-overlay { align-items: flex-end !important; padding: 0 !important; overflow-y: auto !important; }
+    .modal-box { width: 100vw !important; max-width: 100vw !important; height: 92vh !important; max-height: 92vh !important; border-radius: 0 !important; overflow-y: auto !important; padding: 20px 16px !important; margin: 0 !important; }
+    .modal-box input, .modal-box select, .modal-box textarea { min-height: 48px !important; font-size: 16px !important; }
+    .modal-box button { min-height: 48px !important; }
+    .modal-actions { flex-wrap: wrap !important; }
+    .modal-actions button { flex: 1 1 45% !important; }
 }
 

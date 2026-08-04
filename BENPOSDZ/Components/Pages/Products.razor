@@ -8,6 +8,7 @@
 @inject IApplicationStateService appState
 @inject ToastService toastService
 @inject PrintService sysPrintService
+@inject BarcodeService barcodeService
 
 <h2>إدارة المنتجات</h2>
 
@@ -60,7 +61,7 @@
             <tr>
                 <td><img src="@(string.IsNullOrEmpty(product.Pro_Image) ? "https://via.placeholder.com/40" : product.Pro_Image)" class="product-img" /></td>
                 <td>@product.Pro_Name (@product.Pro_Mark)</td>
-                <td>@product.Pro_Barcode <button class="btn-print" @onclick="() => PrintBarcode(product)">🖨️</button></td>
+                <td>@product.Pro_Barcode</td>
                 <td class="@(product.Pro_Qty <= product.Pro_QtyMin && product.Pro_QtyMin > 0 ? "low-stock" : "")">@product.Pro_Qty @product.Pro_Unit</td>
                 <td><input type="number" @bind="product.Pro_Qty_Inv" @bind:after="() => SaveInventoryState(product)" class="inv-input" disabled="@(product.Is_Counted == false)" /></td>
 				<td><input type="checkbox" @bind="product.Is_Counted" @bind:after="() => ToggleCounted(product)" /></td>
@@ -128,6 +129,10 @@
 				<div class="form-group">
                     <label>الباركود</label>
                     <input type="text" @bind="newProduct.Pro_Barcode" placeholder="اتركه فارغاً لتوليد تلقائي" />
+                    <div class="barcode-actions">
+                        <button type="button" class="btn-gen-code" @onclick="GenerateBarcodeForProduct">🔧 توليد باركود</button>
+                        <button type="button" class="btn-print-code" @onclick="OpenBarcodePreview">🖨️ طباعة الباركود</button>
+                    </div>
                 </div>
             </div>
             <div class="form-row">
@@ -175,6 +180,27 @@
             <div class="modal-actions">
                 <button class="btn-save" @onclick="SaveProduct">حفظ</button>
                 <button class="btn-cancel" @onclick="CloseAddModal">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+@if (showBarcodePreview)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 380px;">
+            <h3>🏷️ معاينة الباركود</h3>
+            @if (!string.IsNullOrEmpty(previewBarcodeName))
+            {
+                <div style="font-weight:bold; font-size:15px;">@previewBarcodeName</div>
+            }
+            <div style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:14px; text-align:center;">
+                <img src="@previewBarcodeUri" alt="الباركود" style="max-width:100%; height:auto;" />
+                <div style="font-size:13px; direction:ltr; letter-spacing:1px; color:#333; margin-top:4px;">@previewBarcodeCode</div>
+            </div>
+            <div style="font-size:12px; color:#666; text-align:center;">يُطبع هذا الباركود وفق خيارات تبويب «الباركود» في الإعدادات (النوع، الحجم، عدد النسخ، النصوص).</div>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="PrintPreviewBarcode">🖨️ طباعة</button>
+                <button class="btn-cancel" @onclick="() => showBarcodePreview = false">إغلاق</button>
             </div>
         </div>
     </div>
@@ -232,7 +258,11 @@
 	.btn-apply { background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
     .btn-print-inv { background: #17a2b8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
     .inv-input { width: 80px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
-	.btn-print-prod { background: #6c757d; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
+    .btn-print-prod { background: #6c757d; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
+    .barcode-actions { display: flex; gap: 8px; margin-top: 6px; }
+    .barcode-actions .btn-gen-code { background: #6f42c1; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+    .barcode-actions .btn-print-code { background: #17a2b8; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+
 </style>
 
 @code {
@@ -424,16 +454,60 @@
         toastService.ShowSuccess("تم حذف المنتج", "📦 المنتجات");
     }
 
-    private async Task PrintBarcode(ProductViewModel product)
+    private void GenerateBarcodeForProduct()
     {
-        if (string.IsNullOrWhiteSpace(product.Pro_Barcode))
+        newProduct.Pro_Barcode = GenerateBarcodeCode();
+        toastService.ShowSuccess("تم توليد الباركود: " + newProduct.Pro_Barcode, "🔧 الباركود");
+    }
+
+    private static string GenerateBarcodeCode()
+    {
+        return "2" + DateTime.Now.ToString("yyMMddHHmmss");
+    }
+
+    private bool showBarcodePreview = false;
+    private string previewBarcodeUri = "";
+    private string previewBarcodeName = "";
+    private string previewBarcodeCode = "";
+
+    private void OpenBarcodePreview()
+    {
+        if (string.IsNullOrWhiteSpace(newProduct.Pro_Barcode))
+            newProduct.Pro_Barcode = GenerateBarcodeCode();
+
+        try
         {
-            toastService.ShowWarning("لا يمكن طباعة الباركود: المنتج لا يملك باركود.", "⚠️ الباركود");
+            var opts = barcodeService.LoadOptions();
+            var (w, h) = BarcodeService.GetSizePixels(opts.Size, opts.Type);
+            previewBarcodeUri = barcodeService.GenerateBarcodeDataUri(newProduct.Pro_Barcode, opts.Type, w, h);
+        }
+        catch
+        {
+            previewBarcodeUri = "";
+        }
+        previewBarcodeName = newProduct.Pro_Name;
+        previewBarcodeCode = newProduct.Pro_Barcode;
+        showBarcodePreview = true;
+    }
+
+    private async Task PrintPreviewBarcode()
+    {
+        if (string.IsNullOrWhiteSpace(previewBarcodeCode))
+        {
+            toastService.ShowWarning("لا يوجد باركود للطباعة.", "⚠️ الباركود");
             return;
         }
         try
         {
-            await sysPrintService.PrintBarcodeAsync(JS, product.Pro_Name, product.Pro_Barcode, product.Pro_SalePrice_Min);
+            await sysPrintService.PrintBarcodeAsync(JS, new BarcodePrintData
+            {
+                Name = previewBarcodeName,
+                Code = previewBarcodeCode,
+                Price = newProduct.Pro_SalePrice_Min,
+                HigherPrice = newProduct.Pro_SalePrice_Max,
+                Quantity = newProduct.Pro_Qty
+            });
+            showBarcodePreview = false;
         }
         catch (Exception ex)
         {

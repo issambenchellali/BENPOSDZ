@@ -24,10 +24,6 @@
                     <div class="product-name">@product.Pro_Name</div>
                     <div class="product-price">@(saleType == "0" ? product.Pro_SalePrice_Max : product.Pro_SalePriceG) د.ج</div>
                     <div class="product-stock">المخزون: @product.Pro_Qty</div>
-                    @if (!string.IsNullOrWhiteSpace(product.Pro_Barcode))
-                    {
-                        <button class="pos-barcode-btn" title="طباعة باركود" @onclick="() => PrintBarcode(product)" @onclick:stopPropagation="true">🏷️</button>
-                    }
                 </div>
             }
         </div>
@@ -133,6 +129,10 @@
                 </div>
             </div>
             <p class="price-hint">يمكنك تعديل السعر ضمن الحدود المسموحة.</p>
+            @if (!string.IsNullOrWhiteSpace(selectedProduct?.Pro_Barcode))
+            {
+                <button class="btn-barcode-print" @onclick="PrintBarcodeFromModal">🏷️ طباعة باركود المنتج</button>
+            }
             <div class="modal-actions">
                 <button class="btn-save" @onclick="ConfirmAddToCart">إضافة للسلة</button>
                 <button class="btn-cancel" @onclick="CloseAddToCartModal">إلغاء</button>
@@ -266,7 +266,6 @@
     .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; }
     .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
     .product-card:hover { background: #eef6ff; }
-    .pos-barcode-btn { position: absolute; top: 6px; left: 6px; background: #17a2b8; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 14px; padding: 3px 7px; }
     .product-name { font-weight: bold; margin-bottom: 5px; }
     .product-price { color: #28a745; font-weight: bold; font-size:14px; }
     .product-stock { font-size: 12px; color: #666; margin-top: 5px;}
@@ -334,6 +333,7 @@
     .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
     .btn-save { background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
     .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+    .btn-barcode-print { width: 100%; background: #17a2b8; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-size: 14px; }
 
     .cust-search-row { display: flex; gap: 10px; margin-bottom: 15px; }
     .cust-search-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
@@ -645,16 +645,24 @@
 
     private string GetTypeName(int type) => type switch { 0 or 1 => "بيع", 2 => "شراء", 3 => "مرتجع بيع", 4 => "مرتجع شراء", _ => "-" };
 
-    private async Task PrintBarcode(ProductPosModel product)
+    private async Task PrintBarcodeFromModal()
     {
-        if (string.IsNullOrWhiteSpace(product.Pro_Barcode))
+        if (selectedProduct == null) return;
+        if (string.IsNullOrWhiteSpace(selectedProduct.Pro_Barcode))
         {
             toastService.ShowWarning("لا يمكن طباعة الباركود: المنتج لا يملك باركود.", "⚠️ الباركود");
             return;
         }
         try
         {
-            await sysPrintService.PrintBarcodeAsync(JS, product.Pro_Name, product.Pro_Barcode, product.Pro_SalePrice_Min);
+            await sysPrintService.PrintBarcodeAsync(JS, new BarcodePrintData
+            {
+                Name = selectedProduct.Pro_Name,
+                Code = selectedProduct.Pro_Barcode,
+                Price = selectedProduct.Pro_SalePrice_Min,
+                HigherPrice = selectedProduct.Pro_SalePrice_Max,
+                Quantity = modalQty
+            });
         }
         catch (Exception ex)
         {
