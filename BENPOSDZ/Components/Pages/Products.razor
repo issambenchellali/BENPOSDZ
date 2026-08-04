@@ -132,6 +132,10 @@
                     <div class="barcode-actions">
                         <button type="button" class="btn-gen-code" @onclick="GenerateBarcodeForProduct">🔧 توليد باركود</button>
                         <button type="button" class="btn-print-code" @onclick="OpenBarcodePreview">🖨️ طباعة الباركود</button>
+                        @if (BarcodeService.IsAndroid)
+                        {
+                            <button type="button" class="btn-scan-code" @onclick="ScanBarcodeForProductAsync">📷 مسح بالكاميرا</button>
+                        }
                     </div>
                 </div>
             </div>
@@ -259,9 +263,10 @@
     .btn-print-inv { background: #17a2b8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
     .inv-input { width: 80px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
     .btn-print-prod { background: #6c757d; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; height: fit-content; }
-    .barcode-actions { display: flex; gap: 8px; margin-top: 6px; }
+    .barcode-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
     .barcode-actions .btn-gen-code { background: #6f42c1; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
     .barcode-actions .btn-print-code { background: #17a2b8; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+    .barcode-actions .btn-scan-code { background: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; }
 
 </style>
 
@@ -458,6 +463,42 @@
     {
         newProduct.Pro_Barcode = GenerateBarcodeCode();
         toastService.ShowSuccess("تم توليد الباركود: " + newProduct.Pro_Barcode, "🔧 الباركود");
+    }
+
+    // مسح باركود بالكاميرا وملء حقل الباركود (أندرويد فقط)
+    private async Task ScanBarcodeForProductAsync()
+    {
+        if (!BarcodeService.IsAndroid)
+        {
+            toastService.ShowWarning("المسح بالكاميرا متاح فقط على أندرويد.", "📷 الباركود");
+            return;
+        }
+        try
+        {
+            var status = await Permissions.RequestAsync<Permissions.Camera>();
+            if (status != PermissionStatus.Granted)
+            {
+                toastService.ShowWarning("لم يتم منح إذن الكاميرا.", "📷 الباركود");
+                return;
+            }
+
+            var photo = await MediaPicker.Default.CapturePhotoAsync();
+            if (photo == null) return; // المستخدم ألغى التصوير
+
+            var code = await BarcodeService.DecodeBarcodeFromPhotoAsync(photo);
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                toastService.ShowWarning("تعذر قراءة الباركود من الصورة. حاول مرة أخرى بإضاءة أفضل.", "📷 الباركود");
+                return;
+            }
+
+            newProduct.Pro_Barcode = code;
+            toastService.ShowSuccess("تم قراءة الباركود: " + code, "📷 الباركود");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ أثناء المسح: " + ex.Message, "❌ الباركود");
+        }
     }
 
     private static string GenerateBarcodeCode()

@@ -75,6 +75,19 @@ namespace BENPOSDZ.Services
             return opts;
         }
 
+        // هل نحن على منصة أندرويد (تظهر أزرار المسح بالكاميرا فقط هناك)
+        public static bool IsAndroid
+        {
+            get
+            {
+#if ANDROID
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
+
         // تحويل الإعداد إلى أبعاد البكسل الفعلية حسب النوع والحجم
         public static (int Width, int Height) GetSizePixels(string size, string type)
         {
@@ -149,6 +162,63 @@ namespace BENPOSDZ.Services
             }
             return rgb;
         }
+
+        // مسح الباركود من صورة ملتقطة بالكاميرا (أندرويد فقط) عبر ZXing
+#if ANDROID
+        public static async Task<string?> DecodeBarcodeFromPhotoAsync(FileResult photo)
+        {            if (photo == null) return null;
+            try
+            {
+                using var stream = await photo.OpenReadAsync();
+                var bitmap = await Android.Graphics.BitmapFactory.DecodeStreamAsync(stream);
+                if (bitmap == null) return null;
+
+                // تصغير الصور الكبيرة لتسريع الفحص
+                if (bitmap.Width > 1600 || bitmap.Height > 1600)
+                {
+                    float scale = Math.Min(1600f / bitmap.Width, 1600f / bitmap.Height);
+                    var scaled = Android.Graphics.Bitmap.CreateScaledBitmap(bitmap, (int)(bitmap.Width * scale), (int)(bitmap.Height * scale), false);
+                    bitmap.Recycle();
+                    bitmap = scaled;
+                }
+
+                int w = bitmap.Width, h = bitmap.Height;
+                var pixels = new int[w * h];
+                bitmap.GetPixels(pixels, 0, w, 0, 0, w, h);
+                bitmap.Recycle();
+
+                // ARGB_8888 → RGB24
+                var rgb = new byte[pixels.Length * 3];
+                for (int i = 0; i < pixels.Length; i++)
+                {
+                    int p = pixels[i];
+                    rgb[i * 3] = (byte)((p >> 16) & 0xFF);
+                    rgb[i * 3 + 1] = (byte)((p >> 8) & 0xFF);
+                    rgb[i * 3 + 2] = (byte)(p & 0xFF);
+                }
+
+                var reader = new BarcodeReaderGeneric
+                {
+                    AutoRotate = true,
+                    Options = new ZXing.Common.DecodingOptions
+                    {
+                        TryHarder = true,
+                        PossibleFormats = new List<BarcodeFormat>
+                        {
+                            BarcodeFormat.CODE_128, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+                            BarcodeFormat.UPC_A, BarcodeFormat.QR_CODE
+                        }
+                    }
+                };
+                var luminance = new RGBLuminanceSource(rgb, w, h, RGBLuminanceSource.BitmapFormat.RGB24);
+                return reader.Decode(luminance)?.Text;
+            }
+            catch { return null; }
+        }
+#else
+        // منصة غير أندرويد: لا مسح بالكاميرا (الأزرار مخفية عبر IsAndroid)
+        public static Task<string?> DecodeBarcodeFromPhotoAsync(FileResult photo) => Task.FromResult<string?>(null);
+#endif
 
         // بناء مستند الطباعة الكامل (ملصقات الباركود)
         public string BuildPrintDocument(string name, string code, decimal? price, decimal? higherPrice, decimal? quantity, BarcodePrintOptions opts, string imageUri)

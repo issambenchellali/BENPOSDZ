@@ -15,6 +15,10 @@
     <div class="products-section">
         <div class="search-bar">
             <input type="text" @bind="searchTerm" @bind:event="oninput" @bind:after="SearchProductsAsync" placeholder="🔍 ابحث أو امسح الباركود..." @onkeydown="HandleScanKey" autofocus/>
+            @if (BarcodeService.IsAndroid)
+            {
+                <button class="btn-scan-cam" type="button" @onclick="ScanBarcodeWithCameraAsync" title="مسح الباركود بالكاميرا">📷</button>
+            }
         </div>
         
         <div class="products-grid">
@@ -262,7 +266,10 @@
 <style>
     .pos-container { display: flex; height: calc(100vh - 60px); gap: 20px; direction: rtl; }
     .products-section { flex: 2; display: flex; flex-direction: column; }
-    .search-bar input { width: 100%; padding: 15px; font-size: 18px; border: 2px solid #007bff; border-radius: 8px; margin-bottom: 15px; box-sizing:border-box; }
+    .search-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+    .search-bar input { flex: 1; width: auto; padding: 15px; font-size: 18px; border: 2px solid #007bff; border-radius: 8px; box-sizing: border-box; }
+    .btn-scan-cam { width: 54px; height: 54px; min-width: 54px; border: none; background: #6f42c1; color: white; border-radius: 8px; font-size: 24px; cursor: pointer; }
+    .btn-scan-cam:active { transform: scale(0.95); }
     .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; }
     .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
     .product-card:hover { background: #eef6ff; }
@@ -436,31 +443,79 @@
     {
         if (e.Key == "Enter" || e.Key == "Tab")
         {
-            // البحث عن تطابق كامل للباركود
-            var product = searchResults.FirstOrDefault(p => p.Pro_Barcode == searchTerm);
-            if (product != null)
+            await TryAddScannedBarcode(searchTerm);
+        }
+    }
+
+    // محاولة إضافة منتج مطابق تماماً للباركود إلى السلة (تعيد false إذا لم يوجد)
+    private async Task<bool> TryAddScannedBarcode(string code)
+    {
+        var product = searchResults.FirstOrDefault(p => p.Pro_Barcode == code);
+        if (product == null) return false;
+        if (product.Pro_Qty <= 0) { await JS.InvokeVoidAsync("alert", "هذا المنتج غير متوفر في المخزون."); return true; }
+        if (ActiveCart == null) return false;
+
+        decimal price = ActiveCart.SaleType == "0" ? product.Pro_SalePrice_Max : product.Pro_SalePriceG;
+        var existingItem = ActiveCart.Items.FirstOrDefault(c => c.ProductId == product.Id && c.Price == price);
+
+        if (existingItem != null)
+        {
+            if (existingItem.Qty + 1 > product.Pro_Qty) { await JS.InvokeVoidAsync("alert", "لا توجد كمية كافية في المخزون."); return true; }
+            existingItem.Qty += 1;
+        }
+        else
+        {
+            ActiveCart.Items.Add(new CartItem { ProductId = product.Id, Pro_Name = product.Pro_Name, Price = price, Qty = 1 });
+        }
+
+        ActiveCart.PaidAmount = ActiveCart.TotalAmount;
+        searchTerm = ""; // مسح البحث لإضافة منتج جديد
+        await SearchProductsAsync();
+        return true;
+    }
+
+    // مسح الباركود بالكاميرا (أندرويد فقط)
+    private async Task ScanBarcodeWithCameraAsync()
+    {
+        if (!BarcodeService.IsAndroid)
+        {
+            toastService.ShowWarning("المسح بالكاميرا متاح فقط على أندرويد.", "📷 الباركود");
+            return;
+        }
+        try
+        {
+            var status = await Permissions.RequestAsync<Permissions.Camera>();
+            if (status != PermissionStatus.Granted)
             {
-                if (product.Pro_Qty <= 0) { await JS.InvokeVoidAsync("alert", "هذا المنتج غير متوفر في المخزون."); return; }
-                if (ActiveCart == null) return;
-                
-                decimal price = ActiveCart.SaleType == "0" ? product.Pro_SalePrice_Max : product.Pro_SalePriceG;
-                var existingItem = ActiveCart.Items.FirstOrDefault(c => c.ProductId == product.Id && c.Price == price);
-                
-                if (existingItem != null)
-                {
-                    if (existingItem.Qty + 1 > product.Pro_Qty) { await JS.InvokeVoidAsync("alert", "لا توجد كمية كافية في المخزون."); return; }
-                    existingItem.Qty += 1;
-                }
-                else
-                {
-                    ActiveCart.Items.Add(new CartItem { ProductId = product.Id, Pro_Name = product.Pro_Name, Price = price, Qty = 1 });
-                }
-                
-                ActiveCart.PaidAmount = ActiveCart.TotalAmount;
-                searchTerm = ""; // مسح البحث لإضافة منتج جديد
-                await SearchProductsAsync();
+                toastService.ShowWarning("لم يتم منح إذن الكاميرا.", "📷 الباركود");
+                return;
             }
-            // إذا لم يجد الباركود، لا يفعل شيئاً (كما طلبت)
+
+            var photo = await MediaPicker.Default.CapturePhotoAsync();
+            if (photo == null) return; // المستخدم ألغى التصوير
+
+            var code = await BarcodeService.DecodeBarcodeFromPhotoAsync(photo);
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                toastService.ShowWarning("تعذر قراءة الباركود من الصورة. حاول مرة أخرى بإضاءة أفضل.", "📷 الباركود");
+                return;
+            }
+
+            searchTerm = code;
+            await SearchProductsAsync();
+            bool added = await TryAddScannedBarcode(code);
+            if (!added)
+            {
+                toastService.ShowWarning($"لا يوجد منتج بهذا الباركود: {code}", "🔍 الباركود");
+            }
+            else
+            {
+                toastService.ShowSuccessShort($"تمت إضافة المنتج إلى السلة.", "✅ الباركود");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ أثناء المسح: " + ex.Message, "❌ الباركود");
         }
     }
 
