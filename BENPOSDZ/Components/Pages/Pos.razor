@@ -24,6 +24,10 @@
                     <div class="product-name">@product.Pro_Name</div>
                     <div class="product-price">@(saleType == "0" ? product.Pro_SalePrice_Max : product.Pro_SalePriceG) د.ج</div>
                     <div class="product-stock">المخزون: @product.Pro_Qty</div>
+                    @if (!string.IsNullOrWhiteSpace(product.Pro_Barcode))
+                    {
+                        <button class="pos-barcode-btn" title="طباعة باركود" @onclick="() => PrintBarcode(product)" @onclick:stopPropagation="true">🏷️</button>
+                    }
                 </div>
             }
         </div>
@@ -260,8 +264,9 @@
     .products-section { flex: 2; display: flex; flex-direction: column; }
     .search-bar input { width: 100%; padding: 15px; font-size: 18px; border: 2px solid #007bff; border-radius: 8px; margin-bottom: 15px; box-sizing:border-box; }
     .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; }
-    .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
     .product-card:hover { background: #eef6ff; }
+    .pos-barcode-btn { position: absolute; top: 6px; left: 6px; background: #17a2b8; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 14px; padding: 3px 7px; }
     .product-name { font-weight: bold; margin-bottom: 5px; }
     .product-price { color: #28a745; font-weight: bold; font-size:14px; }
     .product-stock { font-size: 12px; color: #666; margin-top: 5px;}
@@ -639,6 +644,23 @@
     }
 
     private string GetTypeName(int type) => type switch { 0 or 1 => "بيع", 2 => "شراء", 3 => "مرتجع بيع", 4 => "مرتجع شراء", _ => "-" };
+
+    private async Task PrintBarcode(ProductPosModel product)
+    {
+        if (string.IsNullOrWhiteSpace(product.Pro_Barcode))
+        {
+            toastService.ShowWarning("لا يمكن طباعة الباركود: المنتج لا يملك باركود.", "⚠️ الباركود");
+            return;
+        }
+        try
+        {
+            await sysPrintService.PrintBarcodeAsync(JS, product.Pro_Name, product.Pro_Barcode, product.Pro_SalePrice_Min);
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("تعذر فتح الطباعة: " + ex.Message, "❌ طباعة الباركود");
+        }
+    }
 
     // طباعة وثيقة (فاتورة / BL / وصل) من السلة الحالية — حتى لو كانت فارغة
     private async Task PrintCurrentCart(string docType)

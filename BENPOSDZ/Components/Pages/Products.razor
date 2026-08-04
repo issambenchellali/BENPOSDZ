@@ -433,7 +433,7 @@
         }
         try
         {
-            await sysPrintService.PrintBarcodeAsync(JS, product.Pro_Name, product.Pro_Barcode);
+            await sysPrintService.PrintBarcodeAsync(JS, product.Pro_Name, product.Pro_Barcode, product.Pro_SalePrice_Min);
         }
         catch (Exception ex)
         {

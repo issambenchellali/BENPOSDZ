@@ -51,6 +51,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ImageService>();
 		builder.Services.AddSingleton<SecurityService>();
 		builder.Services.AddSingleton<PrintTemplateService>();
+		builder.Services.AddSingleton<BarcodeService>();
 		builder.Services.AddSingleton<PrintService>();
 		builder.Services.AddSingleton<NetworkScanner>();
         var app = builder.Build();

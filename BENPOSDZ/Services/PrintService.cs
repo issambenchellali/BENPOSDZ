@@ -8,6 +8,10 @@ namespace BENPOSDZ.Services
     //  - Android: حوار طباعة النظام (PrintManager) — يشمل الطباعة الورقية وحفظ PDF
     public class PrintService
     {
+        private readonly BarcodeService _barcodeService;
+
+        public PrintService(BarcodeService barcodeService) => _barcodeService = barcodeService;
+
         public async Task PrintHtmlAsync(IJSRuntime js, string html, bool isReceipt)
         {
 #if ANDROID
@@ -18,19 +22,18 @@ namespace BENPOSDZ.Services
 #endif
         }
 
-        public async Task PrintBarcodeAsync(IJSRuntime js, string name, string barcode)
+        // طباعة باركود محلياً عبر ZXing (بدون أي خدمة خارجية) مع خيارات التخصيص من الإعدادات
+        public async Task PrintBarcodeAsync(IJSRuntime js, string name, string barcode, decimal? price = null)
         {
             if (string.IsNullOrWhiteSpace(barcode)) return;
+            var opts = _barcodeService.LoadOptions();
+            string imageUri = _barcodeService.GenerateBarcodeDataUri(barcode, opts.Width, opts.Height);
+            string html = _barcodeService.BuildPrintDocument(name, barcode, price, opts, imageUri);
 #if ANDROID
-            string html =
-                "<!DOCTYPE html><html><head><meta charset='utf-8'><style>body{text-align:center;font-family:Arial,sans-serif;margin-top:20px;}img{margin-top:10px;max-width:100%;}h3{margin:8px 0;}</style></head><body>" +
-                "<h3>" + name + "</h3>" +
-                "<img src='https://barcode.tec-it.com/barcode.ashx?data=" + Uri.EscapeDataString(barcode) + "&code=Code128' alt='barcode' />" +
-                "<p>" + barcode + "</p></body></html>";
             PrintOnAndroid(html);
             await Task.CompletedTask;
 #else
-            await js.InvokeVoidAsync("printBarcode", name, barcode);
+            await js.InvokeVoidAsync("printHtml", html, false);
 #endif
         }
 

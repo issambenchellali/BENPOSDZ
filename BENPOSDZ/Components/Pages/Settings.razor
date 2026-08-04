@@ -308,6 +308,34 @@ else if (currentTab == "print")
             <button class="btn-save" style="background:#17a2b8;" @onclick="SaveSettings">حفظ الرأس/التذييل</button>
         </div>
     </div>
+
+    <div class="settings-card print-editor-card" style="margin-top:15px;">
+        <h3>🏷️ إعدادات طباعة الباركود</h3>
+        <p class="print-hint">يُولَّد الباركود محلياً (ZXing) بدون إنترنت — يُطبَّق على أزرار الطباعة في قائمة المنتجات ونقطة البيع.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label>عرض الباركود (بكسل)</label>
+                <input type="number" min="100" max="500" @bind="settings[K_BarcodeWidth]" />
+            </div>
+            <div class="form-group">
+                <label>ارتفاع الباركود (بكسل)</label>
+                <input type="number" min="40" max="200" @bind="settings[K_BarcodeHeight]" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label>عدد النسخ لكل منتج</label>
+            <input type="number" min="1" max="20" @bind="settings[K_BarcodeCopies]" />
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" checked="@BarcodeShowName" @onchange="ToggleBarcodeShowName" /> إظهار اسم المنتج</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" checked="@BarcodeShowPrice" @onchange="ToggleBarcodeShowPrice" /> إظهار سعر التجزئة تحت الباركود</label>
+        </div>
+        <div class="print-actions">
+            <button class="btn-save" @onclick="SaveSettings">💾 حفظ إعدادات الباركود</button>
+        </div>
+    </div>
 }
 else if (currentTab == "conn")
 {
@@ -728,6 +756,11 @@ else if (currentTab == "update")
     private const string K_StoreNameLocked = "StoreNameLocked";
     private const string K_ShowCaisseToVendeur = "ShowCaisseToVendeur";
     private const string K_SellNoPrint = "SellNoPrint";
+    private const string K_BarcodeWidth = "BarcodeWidth";
+    private const string K_BarcodeHeight = "BarcodeHeight";
+    private const string K_BarcodeShowName = "BarcodeShowName";
+    private const string K_BarcodeShowPrice = "BarcodeShowPrice";
+    private const string K_BarcodeCopies = "BarcodeCopies";
     private string lastBackupPath = "";
     private bool wipeResetStock = false;
 
@@ -974,6 +1007,9 @@ else if (currentTab == "update")
 
     private bool IsSellNoPrint => settings.ContainsKey(K_SellNoPrint) && settings[K_SellNoPrint] == "true";
 
+    private bool BarcodeShowName => !settings.ContainsKey(K_BarcodeShowName) || settings[K_BarcodeShowName] != "false";
+    private bool BarcodeShowPrice => !settings.ContainsKey(K_BarcodeShowPrice) || settings[K_BarcodeShowPrice] != "false";
+
     protected override async Task OnInitializedAsync()
     {
         if (!authService.IsAdmin) { Nav.NavigateTo("/pos"); return; }
@@ -1080,6 +1116,11 @@ else if (currentTab == "update")
         if (!settings.ContainsKey(K_StoreNameLocked)) settings[K_StoreNameLocked] = "false";
         if (!settings.ContainsKey(K_ShowCaisseToVendeur)) settings[K_ShowCaisseToVendeur] = "false";
         if (!settings.ContainsKey(K_SellNoPrint)) settings[K_SellNoPrint] = "false";
+        if (!settings.ContainsKey(K_BarcodeWidth)) settings[K_BarcodeWidth] = "220";
+        if (!settings.ContainsKey(K_BarcodeHeight)) settings[K_BarcodeHeight] = "80";
+        if (!settings.ContainsKey(K_BarcodeShowName)) settings[K_BarcodeShowName] = "true";
+        if (!settings.ContainsKey(K_BarcodeShowPrice)) settings[K_BarcodeShowPrice] = "true";
+        if (!settings.ContainsKey(K_BarcodeCopies)) settings[K_BarcodeCopies] = "1";
     }
 
     private async Task SaveSettings()
@@ -1121,6 +1162,32 @@ else if (currentTab == "update")
         catch (Exception ex)
         {
             toastService.ShowError("فشل حفظ الخيار: " + ex.Message, "❌ البيع بدون طباعة");
+        }
+    }
+
+    private async Task ToggleBarcodeShowName(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_BarcodeShowName] = (e.Value is bool val && val) ? "true" : "false";
+        await SaveBarcodeOption();
+    }
+
+    private async Task ToggleBarcodeShowPrice(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_BarcodeShowPrice] = (e.Value is bool val && val) ? "true" : "false";
+        await SaveBarcodeOption();
+    }
+
+    private async Task SaveBarcodeOption()
+    {
+        try
+        {
+            bool success = await settingsRepository.SaveAllAsync(settings);
+            if (success)
+                toastService.ShowSuccess("تم حفظ إعدادات الباركود", "🏷️ الباركود");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حفظ الخيار: " + ex.Message, "❌ الباركود");
         }
     }
 
