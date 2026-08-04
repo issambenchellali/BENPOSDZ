@@ -2,6 +2,7 @@
 @using BENPOSDZ.Services
 @using Dapper
 @using System.Text
+@using System.Data
 @inject DatabaseService dbService
 @inject IJSRuntime JS
 @inject AuthService authService
@@ -55,24 +56,52 @@
 @if (showHistoryModal)
 {
     <div class="modal-overlay">
-        <div class="modal-box" style="width: 700px;">
-            <h3>سجل معاملات: @historyName</h3>
-            <table class="history-table">
-                <thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th><th>طباعة</th></tr></thead>
-                <tbody>
-                    @foreach (var inv in personInvoices)
-                    {
-                        <tr>
-                            <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
-                            <td>@GetTypeName(inv.Order_Type)</td>
-                            <td>@inv.Price د.ج</td>
-                            <td>@inv.Paid د.ج</td>
-                            <td>@inv.Unpaid د.ج</td>
-                            <td><button class="btn-print-sm" @onclick="() => PrintInvoice(inv.Id)">🖨️</button></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+        <div class="modal-box" style="width: 860px; max-width: 96vw;">
+            <h3>📜 سجل معاملات: @historyName</h3>
+            <div class="history-toolbar">
+                <div class="date-filters">
+                    <label>من</label>
+                    <input type="date" @bind="filterFrom" />
+                    <label>إلى</label>
+                    <input type="date" @bind="filterTo" />
+                </div>
+                <div class="history-actions">
+                    <label class="details-chk">
+                        <input type="checkbox" @bind="printInvoiceDetails" /> طباعة تفاصيل الفواتير
+                    </label>
+                    <button class="btn-print-statement" @onclick="PrintFinancialStatement">🖨️ طباعة الوصل المالي</button>
+                </div>
+            </div>
+            <div class="history-wrap">
+                <table class="history-table">
+                    <thead>
+                        <tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th><th>دفع مبلغ</th><th>طباعة</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var inv in FilteredInvoices)
+                        {
+                            <tr>
+                                <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@GetTypeName(inv.Order_Type)</td>
+                                <td>@inv.Price.ToString("0.00") د.ج</td>
+                                <td>@inv.Paid.ToString("0.00") د.ج</td>
+                                <td class="@(inv.Unpaid > 0 ? "debt-color" : "")">@inv.Unpaid.ToString("0.00") د.ج</td>
+                                <td>
+                                    @if (inv.Unpaid > 0)
+                                    {
+                                        <button class="btn-partial" @onclick="() => OpenPartialPay(inv)">💰 دفع مبلغ</button>
+                                    }
+                                </td>
+                                <td><button class="btn-print-sm" @onclick="() => PrintInvoice(inv.Id)">🖨️</button></td>
+                            </tr>
+                        }
+                        @if (!FilteredInvoices.Any())
+                        {
+                            <tr><td colspan="7" class="fin-empty">لا توجد عمليات في هذه الفترة.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
             <button class="btn-cancel" @onclick="() => showHistoryModal = false" style="width:100%; margin-top:15px;">إغلاق</button>
         </div>
     </div>
@@ -97,6 +126,26 @@
     </div>
 }
 
+@if (showPartialPayModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 430px;">
+            <h3>💰 دفع مبلغ من الفاتورة</h3>
+            <p>رقم الفاتورة: <strong>@(partialPayInvoice != null ? ShortId(partialPayInvoice.Id) : "-")</strong></p>
+            <p>الدين المتبقي على هذه الفاتورة: <strong>@partialPayInvoice?.Unpaid.ToString("0.00") د.ج</strong></p>
+            <div class="form-group">
+                <label>المبلغ المدفوع</label>
+                <input type="number" @bind="partialPayAmount" min="0" max="@partialPayInvoice?.Unpaid" />
+            </div>
+            <p class="hint">لا يمكن دفع أكثر من الدين المتبقي للفاتورة.</p>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="ConfirmPartialPay">تأكيد الدفع</button>
+                <button class="btn-cancel" @onclick="() => showPartialPayModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; }
     .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
@@ -108,13 +157,24 @@
     .no-debt { color: #28a745; }
     .btn-history { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
     .btn-pay { background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
-    
+
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
     .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; text-align: center;}
-    .history-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .history-table th { background: #f8f9fa; padding: 8px; text-align: right; border: 1px solid #ddd; }
-    .history-table td { padding: 8px; border: 1px solid #ddd; }
+    .history-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px 12px; }
+    .date-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .date-filters label { font-size: 12px; color: #555; font-weight: bold; }
+    .date-filters input { padding: 6px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; }
+    .history-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .details-chk { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #333; }
+    .details-chk input { width: 18px; height: 18px; }
+    .btn-print-statement { background: #17a2b8; color: white; border: none; padding: 8px 14px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; }
+    .history-wrap { overflow-x: auto; }
+    .history-table { width: 100%; border-collapse: collapse; margin-top: 10px; min-width: 640px; }
+    .history-table th { background: #f8f9fa; padding: 8px; text-align: right; border: 1px solid #ddd; white-space: nowrap; }
+    .history-table td { padding: 8px; border: 1px solid #ddd; white-space: nowrap; }
+    .btn-partial { background: #fd7e14; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
     .btn-print-sm { background: #17a2b8; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+    .fin-empty { color: #999; padding: 16px; }
     .form-group { text-align: right; margin: 15px 0; }
     .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
     .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 18px; }
@@ -122,7 +182,7 @@
     .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
     .btn-save { background: #28a745; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
     .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
-    .debt-summary { display: flex; justify-content: space-between; align-items: center; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px 18px; margin-bottom: 15px; font-size: 17px; }
+    .debt-summary { display: flex; justify-content: space-between; align-items: center; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px 18px; margin-bottom: 15px; font-size: 17px; flex-wrap: wrap; gap: 8px; }
     .debt-summary strong { color: #dc3545; }
     .btn-print-debts { background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px; }
 </style>
@@ -155,14 +215,28 @@
         }
         catch { }
     }
-    
+
     private bool showHistoryModal = false;
     private string historyName = "";
+    private string historyPersonId = "";
     private List<InvoiceModel> personInvoices = new();
+    private DateTime? filterFrom;
+    private DateTime? filterTo;
+    private bool printInvoiceDetails = false;
 
     private bool showPayModal = false;
     private PersonModel? selectedPerson;
     private decimal paymentAmount = 0;
+
+    private bool showPartialPayModal = false;
+    private InvoiceModel? partialPayInvoice;
+    private decimal partialPayAmount = 0;
+
+    private IEnumerable<InvoiceModel> FilteredInvoices => personInvoices.Where(inv =>
+        (filterFrom == null || inv.Order_Date.Date >= filterFrom.Value.Date) &&
+        (filterTo == null || inv.Order_Date.Date <= filterTo.Value.Date));
+
+    private static string ShortId(string id) => id.Length >= 8 ? id.Substring(0, 8) : id;
 
     private void SwitchTab(int tab)
     {
@@ -219,11 +293,21 @@
 
     private async Task ViewHistory(string id, string name)
     {
+        historyPersonId = id;
         historyName = name;
         using var connection = dbService.CreateConnection();
         string sql = "SELECT * FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Order_Date DESC";
         personInvoices = (await connection.QueryAsync<InvoiceModel>(sql, new { Id = id })).ToList();
         showHistoryModal = true;
+    }
+
+    // تسجيل حركة مالية في Historique (سجل حركات الزبون)
+    private async Task LogHistoryAsync(IDbConnection conn, IDbTransaction? tx, string personId, string type, decimal amount, string? invoiceId, string notes)
+    {
+        string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        await conn.ExecuteAsync(@"INSERT INTO Historique (Id, Person_ID, Hist_Date, Hist_Type, Hist_Amount, Invoice_ID, Hist_Notes, UpdatedAt, IsSynced, IsDeleted)
+                                  VALUES (@Id, @PersonId, @Date, @Type, @Amount, @InvoiceId, @Notes, @Date, 0, 0)",
+            new { Id = Guid.NewGuid().ToString(), PersonId = personId, Date = dateNow, Type = type, Amount = amount, InvoiceId = invoiceId, Notes = notes }, tx);
     }
 
     private void OpenPayModal(PersonModel p)
@@ -251,7 +335,8 @@
             {
                 if (remainingPayment <= 0) break;
                 decimal amountToPay = Math.Min(remainingPayment, inv.Unpaid);
-                await connection.ExecuteAsync("UPDATE Orders SET Paid = Paid + @Pay, Unpaid = Unpaid - @Pay WHERE Id = @Id", new { Pay = amountToPay, Id = inv.Id }, transaction);
+                await connection.ExecuteAsync("UPDATE Orders SET Paid = Paid + @Pay, Unpaid = Unpaid - @Pay, UpdatedAt = @Date WHERE Id = @Id", new { Pay = amountToPay, Id = inv.Id, Date = dateNow }, transaction);
+                await LogHistoryAsync(connection, transaction, selectedPerson.Id, "تسديد دين", amountToPay, inv.Id, $"تسديد @{amountToPay:0.00} على الفاتورة {ShortId(inv.Id)}");
                 remainingPayment -= amountToPay;
             }
 
@@ -259,6 +344,7 @@
             if (remainingPayment > 0)
             {
                 await connection.ExecuteAsync("UPDATE Persons SET Person_Debt = CASE WHEN Person_Debt >= @Amt THEN Person_Debt - @Amt ELSE 0 END WHERE Id = @Id", new { Amt = remainingPayment, Id = selectedPerson.Id }, transaction);
+                await LogHistoryAsync(connection, transaction, selectedPerson.Id, "تسديد دين", remainingPayment, null, "تسديد من الدين الأساسي");
             }
 
             // 3. إضافة المال للصندوق (إذا كان عميلاً) أو خصمه من الخزنة (إذا كان موردًا)
@@ -280,6 +366,135 @@
         {
             transaction.Rollback();
             toastService.ShowError("خطأ: " + ex.Message, "❌ الدفع");
+        }
+    }
+
+    // فتح نافذة دفع مبلغ من فاتورة محددة (دفعة جزئية)
+    private void OpenPartialPay(InvoiceModel inv)
+    {
+        partialPayInvoice = inv;
+        partialPayAmount = inv.Unpaid;
+        showPartialPayModal = true;
+    }
+
+    private async Task ConfirmPartialPay()
+    {
+        if (partialPayInvoice == null || partialPayAmount <= 0 || partialPayAmount > partialPayInvoice.Unpaid)
+        {
+            toastService.ShowWarning("المبلغ المدفوع أكبر من الدين المتبقي للفاتورة!", "⚠️ الدفع");
+            return;
+        }
+
+        using var connection = dbService.CreateConnection();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // 1. خصم المبلغ من دين الفاتورة
+            await connection.ExecuteAsync("UPDATE Orders SET Paid = Paid + @Pay, Unpaid = Unpaid - @Pay, UpdatedAt = @Date WHERE Id = @Id AND IsDeleted = 0",
+                new { Pay = partialPayAmount, Id = partialPayInvoice.Id, Date = dateNow }, transaction);
+
+            // 2. المال: عميل → صندوق، مورد → خزنة
+            int personType = await connection.ExecuteScalarAsync<int>("SELECT COALESCE(Person_Type, 1) FROM Persons WHERE Id = @Id", new { Id = historyPersonId }, transaction);
+            if (personType == 2)
+                await connection.ExecuteAsync("UPDATE Coffer SET Amount = Amount - @Amt, UpdatedAt = @Date", new { Amt = partialPayAmount, Date = dateNow }, transaction);
+            else
+                await connection.ExecuteAsync("UPDATE Caisse SET Amount = Amount + @Amt, UpdatedAt = @Date", new { Amt = partialPayAmount, Date = dateNow }, transaction);
+
+            // 3. تسجيل العملية في Historique
+            await LogHistoryAsync(connection, transaction, historyPersonId, "دفعة جزئية", partialPayAmount, partialPayInvoice.Id,
+                $"دفع مبلغ {partialPayAmount:0.00} على الفاتورة {ShortId(partialPayInvoice.Id)}");
+
+            transaction.Commit();
+            toastService.ShowSuccessShort("تم تسجيل الدفعة الجزئية بنجاح", "✅ الدفع");
+            showPartialPayModal = false;
+            LoadPersons();
+            await ViewHistory(historyPersonId, historyName);
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            toastService.ShowError("خطأ: " + ex.Message, "❌ الدفع");
+        }
+    }
+
+    // طباعة الوصل المالي الكامل: جميع عمليات الزبون (فواتير، مدفوعات، مرتجعات) مع إمكانية طباعة رؤوس الفواتير
+    private async Task PrintFinancialStatement()
+    {
+        if (string.IsNullOrEmpty(historyPersonId)) return;
+        try
+        {
+            using var connection = dbService.CreateConnection();
+            var invoices = (await connection.QueryAsync<InvoiceModel>("SELECT * FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Order_Date ASC", new { Id = historyPersonId })).ToList();
+            var payments = (await connection.QueryAsync<HistoriqueModel>("SELECT * FROM Historique WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Hist_Date ASC", new { Id = historyPersonId })).ToList();
+
+            // تصفية حسب التواريخ المختارة
+            if (filterFrom != null)
+            {
+                invoices = invoices.Where(i => i.Order_Date.Date >= filterFrom.Value.Date).ToList();
+                payments = payments.Where(p => p.Hist_Date.Date >= filterFrom.Value.Date).ToList();
+            }
+            if (filterTo != null)
+            {
+                invoices = invoices.Where(i => i.Order_Date.Date <= filterTo.Value.Date).ToList();
+                payments = payments.Where(p => p.Hist_Date.Date <= filterTo.Value.Date).ToList();
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'/><title>وصل مالي</title><style>body{font-family:Arial,sans-serif;padding:15mm;direction:rtl;}h2{text-align:center;margin:0 0 4px;}p.center{text-align:center;color:#555;margin:2px 0;}h3{margin:18px 0 4px;}table{width:100%;border-collapse:collapse;margin-top:8px;}th,td{border:1px solid #000;padding:6px;text-align:right;font-size:12px;}th{background:#eee;}tfoot td{font-weight:bold;background:#f8f8f8;}</style></head><body>");
+
+            string period = (filterFrom != null ? filterFrom.Value.ToString("yyyy-MM-dd") : "البداية") + " ← " + (filterTo != null ? filterTo.Value.ToString("yyyy-MM-dd") : "الآن");
+            sb.AppendLine("<h2>وصل مالي — " + System.Net.WebUtility.HtmlEncode(historyName) + "</h2>");
+            sb.AppendLine($"<p class='center'>الفترة: {period} | تاريخ الطباعة: {DateTime.Now:yyyy-MM-dd HH:mm}</p>");
+
+            sb.AppendLine("<h3>📄 العمليات والفواتير</h3>");
+            sb.AppendLine("<table><thead><tr><th>التاريخ</th><th>رقم الفاتورة</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th></tr></thead><tbody>");
+            decimal totalSales = 0, totalPaid = 0, totalDebt = 0;
+            foreach (var inv in invoices)
+            {
+                sb.AppendLine($"<tr><td>{inv.Order_Date:yyyy-MM-dd HH:mm}</td><td>{ShortId(inv.Id)}</td><td>{GetTypeName(inv.Order_Type)}</td><td>{inv.Price:0.00}</td><td>{inv.Paid:0.00}</td><td>{inv.Unpaid:0.00}</td></tr>");
+                totalSales += inv.Price; totalPaid += inv.Paid; totalDebt += inv.Unpaid;
+            }
+            sb.AppendLine($"</tbody><tfoot><tr><td colspan='3'>الإجمالي</td><td>{totalSales:0.00}</td><td>{totalPaid:0.00}</td><td>{totalDebt:0.00}</td></tr></tfoot></table>");
+
+            // رؤوس الفواتير (تفاصيل الفاتورة)
+            if (printInvoiceDetails && invoices.Any())
+            {
+                sb.AppendLine("<h3>📋 رؤوس الفواتير (ملخص الفواتير)</h3>");
+                foreach (var inv in invoices)
+                {
+                    var details = (await connection.QueryAsync<dynamic>("SELECT p.Pro_Name, od.Pro_Qty, od.Pro_Price FROM Order_Details od JOIN Products p ON od.Pro_ID = p.Id WHERE od.Order_ID = @Id AND od.IsDeleted = 0", new { Id = inv.Id })).ToList();
+                    sb.AppendLine($"<table style='margin-top:10px;'><thead><tr><th colspan='4'>فاتورة {ShortId(inv.Id)} — {inv.Order_Date:yyyy-MM-dd HH:mm} ({GetTypeName(inv.Order_Type)})</th></tr><tr><th>السلعة</th><th>الكمية</th><th>السعر</th><th>المجموع</th></tr></thead><tbody>");
+                    foreach (dynamic d in details)
+                        sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode((string)d.Pro_Name)}</td><td>{(decimal)d.Pro_Qty:0.##}</td><td>{(decimal)d.Pro_Price:0.00}</td><td>{(decimal)(d.Pro_Qty * d.Pro_Price):0.00}</td></tr>");
+                    sb.AppendLine("</tbody></table>");
+                }
+            }
+
+            // المدفوعات المسجلة في Historique
+            if (payments.Any())
+            {
+                sb.AppendLine("<h3>💵 المدفوعات المسجلة</h3>");
+                sb.AppendLine("<table><thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>رقم الفاتورة</th><th>ملاحظات</th></tr></thead><tbody>");
+                decimal totalPay = 0;
+                foreach (var p in payments)
+                {
+                    string num = !string.IsNullOrEmpty(p.Invoice_ID) ? ShortId(p.Invoice_ID) : "-";
+                    sb.AppendLine($"<tr><td>{p.Hist_Date:yyyy-MM-dd HH:mm}</td><td>{p.Hist_Type}</td><td>{p.Hist_Amount:0.00}</td><td>{num}</td><td>{System.Net.WebUtility.HtmlEncode(p.Hist_Notes ?? "")}</td></tr>");
+                    totalPay += p.Hist_Amount;
+                }
+                sb.AppendLine($"</tbody><tfoot><tr><td colspan='2'>الإجمالي</td><td>{totalPay:0.00}</td><td colspan='2'></td></tr></tfoot></table>");
+            }
+
+            sb.AppendLine("<p style='margin-top:24px;'>التوقيع: .....................................................</p>");
+            sb.AppendLine("</body></html>");
+
+            await sysPrintService.PrintHtmlAsync(JS, sb.ToString(), false);
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ في طباعة الوصل: " + ex.Message, "❌ الطباعة");
         }
     }
 
@@ -326,5 +541,17 @@
         public decimal Price { get; set; }
         public decimal Paid { get; set; }
         public decimal Unpaid { get; set; }
+        public string? Person_ID { get; set; }
+    }
+
+    public class HistoriqueModel
+    {
+        public string Id { get; set; } = "";
+        public string Person_ID { get; set; } = "";
+        public DateTime Hist_Date { get; set; }
+        public string Hist_Type { get; set; } = "";
+        public decimal Hist_Amount { get; set; }
+        public string? Invoice_ID { get; set; }
+        public string? Hist_Notes { get; set; }
     }
 }
