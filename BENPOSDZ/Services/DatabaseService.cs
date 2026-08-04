@@ -2,8 +2,6 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using MySqlConnector;
 using System.Data;
-using System.Net;
-using System.Net.Sockets;
 
 namespace BENPOSDZ.Services
 {
@@ -315,50 +313,13 @@ namespace BENPOSDZ.Services
                 connection.Execute("INSERT INTO Coffer (Id, Amount, UpdatedAt) VALUES (@Id, 0, @Date)", new { Id = Guid.NewGuid().ToString(), Date = dateNow });
         }
 
-        // اكتشاف خوادم MySQL في الشبكة المحلية (منفذ 3306)
+        // اكتشاف خوادم MySQL في الشبكة المحلية (منفذ 3306) — عبر NetworkScanner الموثوق على كل المنصات
         public async Task<List<string>> DiscoverMySqlServersAsync(int timeoutMs = 700)
         {
-            var found = new List<string>();
-            var candidates = new List<string> { "localhost", "127.0.0.1", Environment.MachineName };
-
-            // تحديد الشبكة الفرعية الخاصة (192.168.x / 10.x / 172.16-31.x) من عنوان الجهاز
-            string? subnet = null;
-            try
-            {
-                foreach (var ip in Dns.GetHostAddresses(Environment.MachineName))
-                {
-                    if (ip.AddressFamily != AddressFamily.InterNetwork) continue;
-                    string s = ip.ToString();
-                    var octets = s.Split('.');
-                    if (octets.Length != 4) continue;
-                    bool isPrivate = (octets[0] == "192" && octets[1] == "168")
-                                  || octets[0] == "10"
-                                  || (octets[0] == "172" && int.TryParse(octets[1], out int b) && b >= 16 && b <= 31);
-                    if (isPrivate) { subnet = s.Substring(0, s.LastIndexOf('.')) + "."; break; }
-                }
-            }
-            catch { }
-
-            if (subnet != null)
-                for (int i = 1; i <= 254; i++) candidates.Add(subnet + i);
-
-            var distinct = candidates.Distinct().ToList();
-            LogEvent($"🔍 بدء اكتشاف خوادم MySQL عبر {distinct.Count} عنوان...");
-            await Task.WhenAll(distinct.Select(host => Task.Run(async () =>
-            {
-                using var tcp = new TcpClient();
-                try
-                {
-                    var connectTask = tcp.ConnectAsync(host, 3306);
-                    var done = await Task.WhenAny(connectTask, Task.Delay(timeoutMs));
-                    if (done == connectTask && tcp.Connected)
-                        lock (found) found.Add(host);
-                }
-                catch { }
-            })));
-
+            LogEvent("🔍 بدء اكتشاف خوادم MySQL عبر واجهات الشبكة الفعلية...");
+            var found = await new NetworkScanner().ScanMySqlServersAsync(timeoutMs: Math.Min(timeoutMs, 300));
             LogEvent($"🔎 تم العثور على {found.Count} خادم MySQL محتمل.");
-            return found.OrderBy(x => x).ToList();
+            return found;
         }
 
         // فحص دقة الحسابات المالية: مطابقة تفاصيل الفواتير مع الإجماليات والمدفوعات والديون

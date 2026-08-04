@@ -14,6 +14,7 @@
 @inject DataTransferService dataTransferService
 @inject CloudSyncService cloudSyncService
 @inject UpdateService updateService
+@inject NetworkScanner scanner
 @implements IDisposable
 
 <h2>الإعدادات العامة</h2>
@@ -327,7 +328,13 @@ else if (currentTab == "conn")
                     <input type="text" @bind="settings[K_MySQL_Host]" placeholder="مثال: server-pos أو 192.168.1.10" />
                     <button type="button" class="btn-save" style="background:#17a2b8; margin-top:0; white-space:nowrap;" @onclick="DiscoverServers" disabled="@isDiscovering">🔍 اكتشاف الخادم</button>
                 </div>
-                @if (isDiscovering) { <small style="color:#007bff;">جاري فحص الشبكة المحلية... قد يستغرق ثواني</small> }
+                @if (isDiscovering)
+                {
+                    <small style="color:#007bff;">جاري فحص الشبكة المحلية... (عنوان @scanProgress.Scanned من @scanProgress.Total)</small>
+                    <div class="progress" style="height:10px; margin-top:6px;">
+                        <div class="progress-bar" role="progressbar" style="width:@(scanProgress.Percent)%"></div>
+                    </div>
+                }
                 @if (discoveredServers.Any())
                 {
                     <div class="discovered-box">
@@ -736,6 +743,7 @@ else if (currentTab == "update")
 
     private bool isDiscovering = false;
     private List<string> discoveredServers = new List<string>();
+    private ScanProgress scanProgress = new ScanProgress();
     private bool isAuditing = false;
     private FinancialAuditResult? auditResult = null;
     private bool showAuditModal = false;
@@ -1483,9 +1491,15 @@ else if (currentTab == "update")
     {
         isDiscovering = true;
         discoveredServers = new List<string>();
+        scanProgress = new ScanProgress();
         try
         {
-            discoveredServers = await dbService.DiscoverMySqlServersAsync();
+            var progress = new Progress<ScanProgress>(p =>
+            {
+                scanProgress = p;
+                StateHasChanged();
+            });
+            discoveredServers = await scanner.ScanMySqlServersAsync(timeoutMs: 300, progress);
             if (!discoveredServers.Any())
                 toastService.ShowWarning("لم يتم العثور على أي خادم MySQL في الشبكة. تأكد من تشغيل الخادم واتصاله بنفس الشبكة.", "🔍 اكتشاف الخادم");
         }
@@ -1496,6 +1510,7 @@ else if (currentTab == "update")
         finally
         {
             isDiscovering = false;
+            StateHasChanged();
         }
     }
 
