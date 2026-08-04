@@ -13,9 +13,97 @@
 @inject NetworkScanner scanner
 
 <div class="login-container">
+    <!-- زر الهامبورغر: يفتح درج إعدادات الاتصال (أعلى يسار الشاشة) -->
+    <button class="btn-hamburger-login" @onclick="ToggleDrawer" aria-label="إعدادات الاتصال" title="إعدادات الاتصال">☰</button>
+
+    <!-- غطاء الدرج -->
+    @if (drawerOpen)
+    {
+        <div class="drawer-overlay-login" @onclick="CloseDrawer"></div>
+    }
+
+    <!-- درج منزلق: إعدادات الاتصال -->
+    <aside class="login-drawer @(drawerOpen ? "open" : "")">
+        <div class="drawer-header">
+            <h3>⚙️ إعدادات الاتصال</h3>
+            <button class="btn-close-drawer-login" @onclick="CloseDrawer" aria-label="إغلاق">✖</button>
+        </div>
+
+        <div class="form-group">
+            <label>وضع قاعدة البيانات:</label>
+            <div class="db-toggle-row">
+                <span class="db-toggle-label @(dbMode == "Local" ? "active" : "")">💻 محلي</span>
+                <label class="switch">
+                    <input type="checkbox" checked="@(dbMode == "LAN")" @onchange="ToggleDbMode" />
+                    <span class="slider"></span>
+                </label>
+                <span class="db-toggle-label @(dbMode == "LAN" ? "active" : "")">🌐 شبكة</span>
+            </div>
+        </div>
+
+        @if (dbMode == "LAN")
+        {
+            <div class="form-group">
+                <label>عنوان خادم MySQL</label>
+                <input type="text" @bind="connHost" placeholder="مثال: 192.168.1.10" />
+            </div>
+            <div class="form-group">
+                <label>المستخدم</label>
+                <input type="text" @bind="connUser" />
+            </div>
+            <div class="form-group">
+                <label>كلمة المرور</label>
+                <input type="password" @bind="connPass" />
+            </div>
+            <button type="button" class="btn-discover" @onclick="DiscoverServers" disabled="@discovering">
+                @(discovering ? "جارٍ البحث عن الخوادم..." : "📡 اكتشاف الخادم")
+            </button>
+            @if (discovering && scanProgress.Total > 0)
+            {
+                <small class="scan-hint">فحص @scanProgress.Scanned من @scanProgress.Total عنوان...</small>
+            }
+            @if (discoveryMsg != null)
+            {
+                <div class="discovery-msg" style="color:@(discoveryMsg.StartsWith("✅") ? "#10b981" : "#d97706");">@discoveryMsg</div>
+            }
+        }
+
+        <details class="cloud-conn">
+            <summary>☁️ المزامنة السحابية</summary>
+            <div class="cloud-conn-body">
+                <div class="form-group">
+                    <label>التفعيل</label>
+                    <select @bind="connCloudSync">
+                        <option value="false">معطلة</option>
+                        <option value="true">مفعلة</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Supabase URL</label>
+                    <input type="text" @bind="connSupabaseUrl" placeholder="https://xxxx.supabase.co" />
+                </div>
+                <div class="form-group">
+                    <label>Supabase Key</label>
+                    <input type="password" @bind="connSupabaseKey" placeholder="مفتاح سرّي" />
+                </div>
+            </div>
+        </details>
+
+        <div class="conn-actions">
+            <button type="button" class="btn-save-conn" @onclick="SaveConnSettings">💾 حفظ الإعدادات</button>
+        </div>
+
+        <div class="connection-status-login">
+            <small class="conn-status-label">حالة الاتصال:</small>
+            <span style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
+                @appState.ConnectionStatus
+            </span>
+        </div>
+    </aside>
+
     <div class="login-card">
         <div class="login-header">
-            <h1>BEN POS</h1>
+            <h1>BENPOS</h1>
             <p>نظام إدارة المبيعات</p>
         </div>
 
@@ -42,78 +130,6 @@
         else
         {
             <div class="login-body">
-                <!-- القائمة الجانبية: إعدادات الاتصال وحالة قاعدة البيانات -->
-                <aside class="login-sidebar">
-                    <h3>⚙️ إعدادات الاتصال</h3>
-
-                    <div class="form-group">
-                        <label>وضع قاعدة البيانات:</label>
-                        <div class="db-mode-row">
-                            <button type="button" class="btn-db-mode @(dbMode == "Local" ? "active" : "")" @onclick='() => ChangeDbMode("Local")'>💻 محلي (SQLite)</button>
-                            <button type="button" class="btn-db-mode @(dbMode == "LAN" ? "active" : "")" @onclick='() => ChangeDbMode("LAN")'>🌐 شبكة (MySQL)</button>
-                        </div>
-                    </div>
-
-                    @if (dbMode == "LAN")
-                    {
-                        <div class="form-group">
-                            <label>عنوان خادم MySQL</label>
-                            <input type="text" @bind="connHost" placeholder="مثال: 192.168.1.10" />
-                        </div>
-                        <div class="form-group">
-                            <label>المستخدم</label>
-                            <input type="text" @bind="connUser" />
-                        </div>
-                        <div class="form-group">
-                            <label>كلمة المرور</label>
-                            <input type="password" @bind="connPass" />
-                        </div>
-                        <button type="button" class="btn-discover" @onclick="DiscoverServers" disabled="@discovering">
-                            @(discovering ? "جارٍ البحث عن الخوادم..." : "📡 اكتشاف الخادم")
-                        </button>
-                        @if (discovering && scanProgress.Total > 0)
-                        {
-                            <small class="scan-hint">فحص @scanProgress.Scanned من @scanProgress.Total عنوان...</small>
-                        }
-                        @if (discoveryMsg != null)
-                        {
-                            <div class="discovery-msg" style="color:@(discoveryMsg.StartsWith("✅") ? "#10b981" : "#d97706");">@discoveryMsg</div>
-                        }
-                    }
-
-                    <details class="cloud-conn">
-                        <summary>☁️ المزامنة السحابية</summary>
-                        <div class="cloud-conn-body">
-                            <div class="form-group">
-                                <label>التفعيل</label>
-                                <select @bind="connCloudSync">
-                                    <option value="false">معطلة</option>
-                                    <option value="true">مفعلة</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Supabase URL</label>
-                                <input type="text" @bind="connSupabaseUrl" placeholder="https://xxxx.supabase.co" />
-                            </div>
-                            <div class="form-group">
-                                <label>Supabase Key</label>
-                                <input type="password" @bind="connSupabaseKey" placeholder="مفتاح سرّي" />
-                            </div>
-                        </div>
-                    </details>
-
-                    <div class="conn-actions">
-                        <button type="button" class="btn-save-conn" @onclick="SaveConnSettings">💾 حفظ الإعدادات</button>
-                    </div>
-
-                    <div class="connection-status-login">
-                        <small class="conn-status-label">حالة الاتصال:</small>
-                        <span style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
-                            @appState.ConnectionStatus
-                        </span>
-                    </div>
-                </aside>
-
                 <!-- الجزء الرئيسي: بيانات تسجيل الدخول -->
                 <div class="login-main">
                     <EditForm Model="@loginModel" OnValidSubmit="HandleLogin" class="login-form">
@@ -159,23 +175,54 @@
 </div>
 
 <style>
-    .login-container { display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; box-sizing: border-box; }
-    .login-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 820px; max-width: 96vw; text-align: center; direction: rtl; overflow: hidden; }
+    /* إزالة الشريط الأبيض في الأسفل وتثبيت الخلفية على كامل الشاشة */
+    html, body { margin: 0 !important; height: 100% !important; min-height: 100vh !important; }
+    body { background-color: #f0f2f5; }
+    .login-container { position: relative; display: flex; justify-content: center; align-items: center; height: 100vh; min-height: 100vh; width: 100%; background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+    .login-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 520px; max-width: 96vw; text-align: center; direction: rtl; overflow: hidden; }
     .login-header { padding: 24px 30px 16px; }
     .login-header h1 { color: #007bff; margin: 0 0 5px; }
     .login-header p { color: #666; margin: 0 0 10px; }
 
     .login-body { display: flex; text-align: right; border-top: 1px solid #eef1f4; }
 
-    /* === القائمة الجانبية (إعدادات الاتصال) === */
-    .login-sidebar { width: 280px; flex-shrink: 0; background: #f8fafc; border-inline-start: 1px solid #e2e8f0; padding: 20px; box-sizing: border-box; }
-    .login-sidebar h3 { font-size: 15px; margin: 0 0 14px; color: #334155; }
-    .login-sidebar .form-group { margin-bottom: 12px; }
-    .login-sidebar label { display: block; font-size: 12px; color: #475569; font-weight: bold; margin-bottom: 4px; }
-    .login-sidebar input, .login-sidebar select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 13px; background: #fff; }
-    .db-mode-row { display: flex; gap: 8px; }
-    .btn-db-mode { flex: 1; padding: 9px 4px; border: 2px solid #e2e8f0; background: #fff; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 12px; color: #64748b; transition: 0.2s; }
-    .btn-db-mode.active { border-color: #007bff; background: #eef6ff; color: #007bff; }
+    /* === زر الهامبورغر ودرج إعدادات الاتصال === */
+    .btn-hamburger-login {
+        position: fixed; top: 14px; left: 14px; z-index: 1300;
+        background: #2c3e50; color: white; border: none; border-radius: 8px;
+        width: 44px; height: 44px; font-size: 22px; cursor: pointer; line-height: 1;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .btn-hamburger-login:hover { background: #34495e; }
+    .drawer-overlay-login { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 1200; }
+    .login-drawer {
+        position: fixed; top: 0; left: 0; bottom: 0; width: 300px; max-width: 88vw;
+        background: #f8fafc; z-index: 1250; padding: 18px; box-sizing: border-box;
+        transform: translateX(-100%); transition: transform 0.25s ease;
+        box-shadow: 4px 0 14px rgba(0,0,0,0.3); overflow-y: auto;
+        direction: rtl; text-align: right;
+    }
+    .login-drawer.open { transform: translateX(0); }
+    .drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+    .drawer-header h3 { margin: 0; font-size: 16px; color: #334155; }
+    .btn-close-drawer-login { background: #e2e8f0; border: none; border-radius: 6px; width: 36px; height: 36px; font-size: 16px; cursor: pointer; color: #334155; }
+    .btn-close-drawer-login:hover { background: #cbd5e1; }
+
+    .login-drawer .form-group { margin-bottom: 12px; }
+    .login-drawer label { display: block; font-size: 12px; color: #475569; font-weight: bold; margin-bottom: 4px; }
+    .login-drawer input, .login-drawer select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 13px; background: #fff; }
+
+    /* مفتاح تبديل وضع قاعدة البيانات (Toggle Switch) */
+    .db-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
+    .db-toggle-label { font-size: 13px; font-weight: bold; color: #64748b; }
+    .db-toggle-label.active { color: #007bff; }
+    .switch { position: relative; display: inline-block; width: 52px; height: 28px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 28px; transition: 0.3s; }
+    .slider:before { content: ""; position: absolute; height: 22px; width: 22px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    .switch input:checked + .slider { background: #007bff; }
+    .switch input:checked + .slider:before { transform: translateX(24px); }
+
     .btn-discover { width: 100%; padding: 10px; background: #0ea5e9; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
     .btn-discover:hover { background: #0284c7; }
     .btn-discover:disabled { opacity: 0.6; cursor: wait; }
@@ -215,8 +262,6 @@
         .login-container { height: auto; min-height: 100vh; padding: 12px; align-items: flex-start; }
         .login-card { width: 100%; max-width: 100%; border-radius: 10px; }
         .login-header { padding: 18px 16px 12px; }
-        .login-body { flex-direction: column; }
-        .login-sidebar { width: 100%; border-inline-start: none; border-bottom: 1px solid #e2e8f0; }
         .login-main { padding: 18px 16px 24px; }
         .btn-login { padding: 16px; font-size: 18px; }
         .force-change-box { padding: 20px 16px; }
@@ -228,6 +273,7 @@
     private LoginModel loginModel = new LoginModel();
     private string? errorMessage;
     private bool showLogs = false;
+    private bool drawerOpen = false;
 
     private bool showForceChange = false;
     private string newPass = "";
@@ -244,6 +290,12 @@
     private bool discovering = false;
     private ScanProgress scanProgress = new ScanProgress();
     private string? discoveryMsg;
+
+    private void ToggleDrawer() => drawerOpen = !drawerOpen;
+    private void CloseDrawer() => drawerOpen = false;
+
+    // تبديل وضع قاعدة البيانات عبر المفتاح المنزلق (Local ↔ LAN)
+    private void ToggleDbMode() => ChangeDbMode(dbMode == "Local" ? "LAN" : "Local");
 
     private async Task ChangePasswordNow()
     {
