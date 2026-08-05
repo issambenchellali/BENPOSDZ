@@ -35,7 +35,7 @@ namespace BENPOSDZ.Services
         public const string K_UpdateAutoDownload = "UpdateAutoDownload";
         public const string K_LastUpdateCheck = "LastUpdateCheck";
 
-        private const string DefaultRepoUrl = "https://github.com/BENPOSDZ/BENPOSDZ";
+        private const string DefaultRepoUrl = "https://github.com/issambenchellali/BENPOSDZ";
         private readonly DatabaseService _db;
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
 

@@ -1,8 +1,10 @@
 # BENPOS — تقرير التقدم الشامل
 
-**المشروع:** نظام نقاط البيع BENPOSDZ (.NET 8 MAUI Blazor Hybrid — Windows)
+**المشروع:** نظام نقاط البيع BENPOSDZ (.NET 8 MAUI Blazor Hybrid — Windows + Android)
 **المسار:** `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ`
-**آخر بناء:** نجح — 0 أخطاء / 0 تحذيرات (بعد المرحلة العاشرة: نظام التحديثات التلقائي عبر GitHub Releases + أداة BENPOSUpdater)
+**المستودع:** `https://github.com/issambenchellali/BENPOSDZ`
+**آخر بناء:** نجح — 0 أخطاء / 0 تحذيرات (ويندوز وأندرويد)
+**الحالة:** التقرير النهائي — اكتملت كل المراحل (1–19) وجاهزية الإصدار
 
 ---
 
@@ -352,7 +354,7 @@
 | `.github\workflows\release.yml` | CI: عند Tag `v*` أو إطلاق يدوي، يبني وينشر ويرفع الحزمة + `version.json` كأصول Release. |
 
 ### إعدادات جديدة في AppSettings
-- `UpdateRepoUrl` — رابط مستودع GitHub (افتراضي `https://github.com/BENPOSDZ/BENPOSDZ`، قابل للتعديل من الإعدادات).
+- `UpdateRepoUrl` — رابط مستودع GitHub (افتراضي `https://github.com/issambenchellali/BENPOSDZ`، قابل للتعديل من الإعدادات).
 - `UpdateCheckOnStart` — فحص عند الإقلاع.
 - `UpdateCheckPeriodic` — فحص دوري كل 24 ساعة (افتراضي مفعّل).
 - `UpdateAutoDownload` — تنزيل وتثبيت تلقائي عند توفر تحديث.
@@ -432,6 +434,94 @@
 2. إعداد مستودع GitHub (المشروع ليس git repo بعد) ورفعه، ثم تعيين أسرار التوقيع الثلاثة.
 3. قرار التوزيع: Sideload عبر Releases (جاهز الآن) أو Google Play (لاحقاً).
 4. اختياري: زر "الإبلاغ عن مشكلة" مع إرفاق سجل الأخطاء تلقائياً.
+
+
+---
+
+## 16. المرحلة الثالثة عشرة: الإصدارات (Mono / Multi / Full) والترخيص الموحّد
+
+### نظام الإصدارات
+- **`Services\LicenseService.cs`** (جديد) — محور الترخيص:
+  - ثلاث إصدارات: `EditionMono` (أساسية — جهاز واحد، بلا شبكة/سحابة)، `EditionMulti` (متعددة — شبكة MySQL)، `EditionFull` (كاملة — شبكة + مزامنة Supabase).
+  - **كود التفعيل أصبح 7 خانات**: حرف النسخة + 6 أرقام (M/P/F). خوارزمية: `internal-algo`.
+  - **الأكواد القديمة (6 أرقام) تبقى مقبولة** وتُعتبر نسخة كاملة (توافقية).
+  - واجهة ثابتة: `EditionLabel`/`EditionPrefix`/`EditionFromPrefix`/`AllEditions`/`GetEdition`/`SetEdition`.
+- **`AuthService.TryActivateWithCode`** — التحقق من الكود وتحديد النسخة؛ تسجيل `K_Edition` في AppSettings.
+- **`Services\AuditService.cs`** — كما في المرحلة 17.
+
+### واجهة الإعدادات (`Settings.razor`)
+- تبويب **"🔢 نوع النسخة"**: جدول مقارنة بين الإصدارات الثلاث + زر الترقية بكود جديد + زر الرجوع إلى Mono.
+- تبويب **"الأنواع"** و**"نوع النسخة"** أصبحا **ظاهرين دائماً حتى بدون ترخيص** (تصفح مجاني).
+- تبويب **"الاتصال"** مقيَّد حسب الإصدار: MySQL مقفل في Mono، Supabase متاح في Full فقط.
+- شاشة **"التفعيل"**: حقل كود 7 خانات (placeholder `F000000`) + عرض اسم الإصدار الحالي.
+
+### النتيجة
+- بناء ويندوز وأندرويد نجحا 0/0 بعد توحيد الإصدارات. Commit `47733f9`.
+
+
+---
+
+## 17. المرحلة الرابعة عشرة: التدقيق المالي مع الإصلاحات الذاتية
+
+- **`Services\AuditService.cs`** (جديد): `RunFullAuditAsync()` يفحص كل الفواتير — تطابق مجموع التفاصيل مع إجمالي الفاتورة، المدفوع+الدين = السعر، الفواتير بلا تفاصيل، صحة المرتجعات، وإجماليات المبيعات/المشتريات — ويعيد تقريراً كاملاً.
+- **`FixInvoiceTotalsAsync()`** — **إصلاح تلقائي**: يعيد حساب إجماليات الفواتير الخاطئة من تفاصيلها (ضمن معاملة ذرّية).
+- **`FinancialAuditResult`** (فئة في `DatabaseService.cs`): نتيجة التدقيق المُعرَضة في الإعدادات.
+- **`DatabaseService`** أصبح يوجّه التدقيق إلى `AuditService` بدل تكرار المنطق.
+- **إصلاحات قاعدة البيانات** عبر `EnsureColumnExists` (فحص `pragma_table_info` قبل الإضافة — idempotent):
+  - جدول `Product_Types` (كان مفقوداً → "no such table" في الاستيراد).
+  - عمود `Orders.Id` (كان مفقوداً → "no such column: o.Id" في التدقيق).
+  - عمود `IsDeleted` في `Users`.
+- أزرار في الإعدادات: **"فَسح دقة الحسابات المالية"** + **"إصلاح الأخطاء الآن"** (تشغيل `FixInvoiceTotalsAsync` ثم إعادة الفحص). Commit `47733f9`.
+
+
+---
+
+## 18. المرحلة الخامسة عشرة: الطباعة والتصدير والنسخ الاحتياطي (ويندوز + أندرويد)
+
+- **`Services\PrintService.cs`** — تحصين شامل:
+  - أندرويد: `PrintHtmlAsync`/`PrintBarcodeAsync` عبر WebView مخفي + `PrintManager.CreatePrintDocumentAdapter`، مع حذف الويبفيو بعد الطباعة وtry/catch مع `LogEvent` على كل المسارات.
+  - ويندوز: JS `printHtml`/`printBarcode` في WebView2.
+  - `ShareHtmlAsync`: أندرويد → Intent `ACTION_SEND`؛ ويندوز → `downloadDoc`.
+- **`Services\FileDialogService.cs`** — إضافة `LastError` لعرض رسائل فشل/نجاح الحفظ واضحة (بدل الفشل الصامت).
+- **رسائل واجهة واضحة** للنسخ الاحتياطي والاستعادة والاستيراد في تبويب "النسخ الاحتياطي" (نجاح/فشل بتفاصيل المسار). Commit `5acfe9b`.
+
+
+---
+
+## 19. المرحلة السادسة عشرة: التوزيع — مثبّت ويندوز + internal-licmgr + Release
+
+### أداة التوليد `internal-licmgr`
+- **`internal-tools\internal-licmgr`** (مشروع .NET 8 console، self-contained win-x64، net8.0):
+  - `-m <MachineId> -e F|P|M` — كود تفعيل بالإصدار المطلوب (خوارزمية مطابقة تماماً لـ `LicenseService`).
+  - `-s <secret>` — بسر تفعيل مخصص، `-daily` — كود الدخول اليومي.
+  - عرض عربي سليم (Console UTF-8). نُسخ واختُبر بنجاح (M/P/F + daily).
+- **`internal-codegen`** — أصبح فيه **مُحدِّد إصدار (M/P/F)** مع توليد كود مُسبَّق + نسخ تلقائي للحافظة.
+- **`internal-tools\README.md`** — حُدّث بالكامل لنظام الإصدارات الثلاث وطريقة internal-licmgr.
+
+### مثبّت ويندوز (Inno Setup)
+- ثُبّت **Inno Setup 7.0.2** (per-user، `C:\Users\Issam\AppData\Local\Programs\Inno Setup 7\ISCC.exe`).
+- **`installer\BENPOSDZ.iss`** (جديد): لغتان (عربي/فرنسي)، تثبيت بلا صلاحيات إدارية (`{autopf}` → LocalAppData\Programs)، اختصارات، تضمين `BENPOSUpdater.exe`، وترك بيانات المستخدم (SQLite في AppData) سليمة عند الإزالة/الترقية.
+- **`scripts\publish.ps1`** — نُسّق UTF-8 مع BOM (مهم لـ PowerShell 5.1 مع النص العربي) + خطوة **5/5**: بناء المثبّت تلقائياً بعد الحزمة.
+- **نتاج إصدار 1.0 في `releases\`**: `BENPOSDZ_1.0.zip` (163MB) + `version.json` (مع SHA-256) + `BENPOSDZ_Setup_1.0.exe` (131MB).
+- **اختبار فعلي**: تثبيت صامت في مجلد مؤقت (نجح: BENPOSDZ.exe + WebView2 + wwwroot + updater + مُلغٍ) ثم إزالة نظيفة (exit 0، حُذف المجلد).
+
+### إصلاح رابط التحديث (404)
+- كان الافتراضي `https://github.com/BENPOSDZ/BENPOSDZ` (غير موجود → 404 → "أنت تستخدم أحدث إصدار").
+- **الحل**: التعديل إلى المستودع الفعلي `https://github.com/issambenchellali/BENPOSDZ` في:
+  - `Services\UpdateService.cs` (`DefaultRepoUrl`).
+  - `installer\BENPOSDZ.iss` (`AppPublisherURL`).
+  - `PROGRESS_REPORT.md`.
+- ملاحظة: إن كانت قيمة `UpdateRepoUrl` محفوظة سابقاً في AppSettings (قاعدة قديمة)، تُعاد كتابتها من شاشة الإعدادات أو تُمسح القيمة ليعود الافتراضي.
+
+### خطوات إصدار تحديث جديد
+1. `powershell -File scripts\publish.ps1 -Version X.Y.Z -Repo "issambenchellali/BENPOSDZ" -Notes "..."` (محلياً) أو ادفع Tag `vX.Y.Z` ليتفعّل `.github\workflows\release.yml`.
+2. يُنتج `releases\BENPOSDZ_X.Y.Z.zip` + `version.json` + `BENPOSDZ_Setup_X.Y.Z.exe`.
+3. تُرفع الحزمة و`version.json` كأصول Release — البرنامج عند الفحص سيكتشف `version > current` ويقدّم التحديث.
+
+### البناء والتحقق النهائي
+- **ويندوز** (`net8.0-windows10.0.19041.0`): 0 أخطاء / 0 تحذيرات.
+- **أندرويد** (`net8.0-android`): 0 أخطاء / 0 تحذيرات.
+- **Commits الأخيرة**: `47733f9` (إصدارات + تدقيق)، `5acfe9b` (طباعة/تصدير)، `abee8a7` (توزيع + internal-licmgr + مثبّت).
 
 
 

@@ -1,63 +1,77 @@
-## Objective
-- المرحلة الأولى (نظام التحديثات لويندوز عبر GitHub Releases + `BENPOSUpdater.exe`) **منجزة بالكامل** 0/0.
-- الآن تنفيذ **المرحلة الثانية (أندرويد)**: تفعيل `net8.0-android`، طباعة النظام/PDF/مشاركة عبر `PrintService`، ترخيص بنفس أكواد التفعيل (بصمة مركّبة ANDROID_ID)، واجهة متجاوبة بشريط تنقل سفلي، توقيع APK بالـ Keystore، وبناء APK محلياً (المستخدم اختار تثبيت JDK + Android SDK الآن بدل الاعتماد على CI فقط).
+# التقرير النهائي — BENPOSDZ
+**نظام نقاط البيع المتكامل (.NET 8 MAUI Blazor Hybrid — Windows + Android)**
 
-## Important Details
-- قرارات المرحلة 2 المعتمدة: طباعة أندرويد = PrintManager (نظام) + PDF + مشاركة (بلا بلوتوث في v1)؛ ترخيص أندرويد = نفس كود التفعيل مربوط بمعرّف الجهاز؛ بصمة أندرويد = `ANDROID_ID|Build.Brand|Build.Model` (SHA-256 → 4 أرقام)؛ مفتاح توقيع منفصل + إرشادات تثبيت APK يدوي؛ `UpdateService` معطّل شرطياً (`#if ANDROID`).
-- متغيرات البيئة المثبتة (User): `JAVA_HOME=C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot`، `ANDROID_HOME=C:\Android\sdk`، `ANDROID_SDK_ROOT=C:\Android\sdk`.
-- SDK المثبت: `platforms;android-34` + `build-tools;34.0.0` + `platform-tools` + `cmdline-tools\latest` (وُسّع يدوياً من `C:\Android\cmdtools.zip` 146MB)؛ التراخيص كُتبت يدوياً (`android-sdk-license` ثلاثة أسطر + `android-sdk-preview-license`) لأن أنبوب `echo y |` فشل.
-- أمر بناء ويندوز: `dotnet build "D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\BENPOSDZ.csproj" -f net8.0-windows10.0.19041.0 --nologo -v q -p:OutputPath="C:\Users\Issam\AppData\Local\Temp\opencode\benpos_build\bin\"`.
-- أمر بناء أندرويد: نفس csproj بـ `-f net8.0-android` (يتطلب `$env:JAVA_HOME/$env:ANDROID_HOME/$env:ANDROID_SDK_ROOT` في الجلسة).
-- csproj: `TargetFrameworks=net8.0-android;net8.0-windows10.0.19041.0`، `ApplicationId=dz.benpos.pos`، كتلة توقيع مستقلة شرط `android` (`AndroidPackageFormats=apk` + `AndroidKeyStore` من متغيرات بيئة `ANDROID_KEYSTORE`/`ANDROID_ALIAS`/`ANDROID_KEYSTORE_PASS`).
-- `SecretProtector.cs` متعدد المنصات: `DPAPI1:` (Windows) / `AKS1:` (Android — AES/GCM عبر Android Keystore، مفتاح `benposdz_secret_key`، IV 12 بايت) / `B64:` (احتياطي)؛ `Decrypt` على أندرويد يعيد قيم `DPAPI1:` كما هي.
-- أسماء واجهة أندرويد الفعلية (تحقق منها عبر MetadataLoadContext على `Mono.Android.dll` 34.0.154): `Javax.Crypto.KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes,"AndroidKeyStore")` وليس `Android.Security.Keystore.KeyGenerator`؛ `KeyStorePurpose.Encrypt|Decrypt` وليس `KeyPurposePurpose`؛ `KeyStore.GetKey(alias,null)` يرجع `Java.Security.IKey` (لا `Java.Security.SecretKey` وليست `ContainsAlias`)؛ `Cipher.GetIV()` وليس `Cipher.IV`؛ `GCMParameterSpec(128, iv)`.
-- `PrintService.cs`: `PrintHtmlAsync`/`PrintBarcodeAsync` (ويندوز → `printHtml`/`printBarcode` في JS؛ أندرويد → WebView مخفي + `PrintManager.CreatePrintDocumentAdapter`)؛ `ShareHtmlAsync` (أندرويد → Intent `ACTION_SEND` بنص منزوع الوسوم؛ ويندوز → `downloadDoc`). معدّل في `MauiProgram.cs`.
-- مواضع الاستدعاء حُولت إلى `sysPrintService`: `Pos.razor` (3 مواضع)، `Invoices.razor`، `Products.razor` (باركود)، `Persons.razor` (2)، `Settings.razor` (`PrintTest` + زر "📤 مشاركة المعاينة" `ShareTest`).
-- MainLayout حصل على شريط تنقل سفلي `bottom-nav` (POS/الفواتير/المنتجات/المالية/الإعدادات لأدمن) + CSS `@media (max-width:768px)`؛ `app.css` حصل على قواعد جوال (POS عمودي، grid بخانتين، جداول بتمرير أفقي، نوافذ modal من الأسفل).
-- إعدادات أندرويد الحالية: `AndroidManifest.xml` (INTERNET/ACCESS_NETWORK_STATE فقط)، `MainActivity` splashed رئيسية، `Minimum Android = 24.0`.
+**المستودع:** `https://github.com/issambenchellali/BENPOSDZ`
+**البناء:** ويندوز وأندرويد — 0 أخطاء / 0 تحذيرات
+**الحالة:** مكتمل وجاهز للإصدار
 
-## Work State
-### Completed
-- أدوات أندرويد: JDK 17، cmdline-tools، android-34، build-tools 34.0.0، التراخيص، متغيرات البيئة.
-- `BENPOSDZ.csproj`: `TargetFrameworks` مزدوج + `ApplicationId=dz.benpos.pos` + كتلة توقيع شرطية.
-- `SecretProtector.cs` + `AuthService.GetMachineId()` + `UpdateService` معطّل على أندرويد.
-- `PrintService.cs` + تسجيل Singleton + مواضع الاستدعاء في 5 صفحات + زر مشاركة في Settings.
-- واجهة متجاوبة: شريط تنقل سفلي + CSS جوال.
-- المرحلة الأولى منجزة تماماً (انظر PROGRESS_REPORT.md قسم 13).
-- **البناء أندرويد Debug نجح 0/0** (إصلاح `#endif` + أسماء API الفعلية).
-- **التوقيع والإطلاق**:
-  - `scripts/make-keystore.ps1` + `keys/benpos-release.keystore` مولّد (كلمة المرور في `keys/benpos-release.password.txt`، مستثناة من git).
-  - APK Release موقّع محلياً: `dz.benpos.pos-Signed.apk` إصدار 1.1.0 (versionCode 2) ~47MB — شهادة `CN=BENPOSDZ POS` (تم التحقق بـ apksigner). minSdk 24 / targetSdk 34.
-  - وظيفة `android` أُضيفت إلى `.github/workflows/release.yml` (maui-android workload + JDK17 + setup-android بالتراخيص + توقيع اختياري من الأسرار + رفع APK).
-  - `.gitignore` (keys/, bin/, obj/, releases/).
-  - `docs/USER_MANUAL.md` + `docs/FIELD_TEST.md`.
-- `PROGRESS_REPORT.md` حُدّث بأقسام 14 (أندرويد) + 15 (التحضير للإطلاق).
+---
 
-### Active
-- **بانتظار المستخدم**: ضبط أسرار GitHub الثلاثة (`ANDROID_KEYSTORE` من `keys/keystore-base64.txt`، `ANDROID_KEYSTORE_PASS`، `ANDROID_ALIAS=benpos`) في `Settings → Secrets and variables → Actions`، ثم دفع Tag `v1.1.0` لتشغيل CI.
+## 1. خلاصة المشروع
+بُنيت جميع مراحل النظام (1–19) واختبِر التوزيع فعلياً. النظام يغطي: نقطة بيع، مخزون، فواتير، عملاء وموردين، مشتريات، إدارة مالية ولوحة تحكم، ديون، مرتجعات، مزامنة سحابية (Supabase)، شبكة محلية (MySQL)، طباعة (ويندوز/أندرويد)، ترخيص بثلاث إصدارات، نسخ احتياطي، تدقيق مالي مع إصلاحات ذاتية، تحديثات تلقائية عبر GitHub، ومثبّت ويندوز.
 
-### Completed (آخر جلسة)
-- أُصلح المستودع: كان `.git` داخل `BENPOSDZ\` (يضم 10,435 ملفاً، 781MB من bin/) — حُذف وأُعيد init في جذر المشروع مع `.gitignore`؛ الدفع نجح (`main` = 92 ملفاً على `github.com/issambenchellali/BENPOSDZ`).
-- CI: أُضيف `dotnet workload install maui-windows` لوظيفة ويندوز (كانت ستفشل) — مدفوع في `e0d8467`.
-- `keys/keystore-base64.txt` مولّد (3.5KB) لملء سر `ANDROID_KEYSTORE`.
+## 2. المراحل المنجزة
+| المرحلة | المحتوى |
+|---|---|
+| 1 | إصلاح الترجمة، كشف العبث بالتاريخ، حذف SyncService (تسريب أسرار) |
+| 2 | إعادة هيكلة Enterprise: PBKDF2، SQLite-First، رفع صور، ترحيل أعمدة |
+| 3 | فصل صارم SQLite/MySQL، محو العمليات المالية، قوالب طباعة مرئية |
+| 4 | إصلاح LAN، سجل مطوّر، اكتشاف الخادم، mysql_setup.sql آمن، تدقيق مالي |
+| 5 | تبويبات الفواتير، طباعة قبل البيع، لوحة تحكم رباعية، إصلاح مزامنة Supabase |
+| 6 | إصلاح طباعة، إيقاف رفع الصور، قوالب JSON مرئية، نقل البيانات، نظام ديون موحّد |
+| 7 | مزامنة Supabase ثنائية، تشفير DPAPI، تغيير إجباري لكلمة المرور، قفل اسم المتجر |
+| 8 | مفتاح تفعيل قابل للتغيير، استعادة آمنة (SQLite Backup API)، Supabase_setup.sql، QueryProfiler |
+| 9 | دمج اللوحة المالية، ديون الزبائن في POS، تدقيق المرتجعات، إصلاح سحب السحابة |
+| 10 | **نظام التحديثات التلقائي**: UpdateService + BENPOSUpdater + version.json + release.yml |
+| 11 | **أندرويد**: net8.0-android، طباعة/مشاركة، ترخيص بالجهاز، واجهة متجاوبة |
+| 12 | **التحضير للإطلاق**: keystore موقّع، APK Release، CI، دليل المستخدم والاختبار الميداني |
+| 13 | **الإصدارات Mono/Multi/Full** + كود تفعيل 7 خانات + واجهة "نوع النسخة" |
+| 14 | **التدقيق المالي** مع إصلاح ذاتي (RunFullAuditAsync / FixInvoiceTotalsAsync) + إصلاح المخطط |
+| 15 | **الطباعة والتصدير**: PrintService محصّن (أندرويد/ويندوز)، FileDialogService.LastError، رسائل واضحة |
+| 16 | **التوزيع**: internal-licmgr، مثبّت Inno Setup، publish.ps1 بخطوة المثبّت، إصلاح رابط الـ 404 |
 
-### Blocked
-- Tag `v1.1.0` غير مدفوع بعد — بانتظار الأسرار (قرار المستخدم: "انتظر حتى أضبط الأسرار").
+## 3. الإصدارات والترخيص
+- **Mono (M)** — أساسية: جهاز واحد، بلا شبكة/سحابة.
+- **Multi (P)** — متعددة: شبكة محلية MySQL.
+- **Full (F)** — كاملة: شبكة + مزامنة Supabase.
+- كود التفعيل 7 خانات (حرف + 6 أرقام)، مرتبط بالجهاز والساعة، استخدام واحد، ولا تُتراكم السنوات. الأكواد القديمة (6 أرقام) تبقى مقبولة كنسخة كاملة.
+- التوليد: `internal-tools\internal-licmgr` (سطر أوامر: `-m <id> -e F|P|M`، `-daily`) أو `internal-codegen` (واجهة مع مُحدِّد الإصدار + نسخ للحافظة).
 
+## 4. التحديثات والنشر
+- **`scripts\publish.ps1 -Version X.Y.Z -Repo "issambenchellali/BENPOSDZ"`** ينتج في `releases\`:
+  - `BENPOSDZ_X.Y.Z.zip` (حزمة التحديث، self-contained)
+  - `version.json` (الإصدار + الملاحظات + SHA-256)
+  - `BENPOSDZ_Setup_X.Y.Z.exe` (مثبّت Inno Setup، لغة عربية/فرنسية)
+- أو ادفع Tag `vX.Y.Z` ليتفعّل `.github\workflows\release.yml` (ويندوز + أندرويد).
+- التحقق من سلامة الملف عبر SHA-256 إلزامي قبل التثبيت، مع تراجع تلقائي عند الفشل.
 
-### Next Move
-1. المستخدم ينفّذ `docs/FIELD_TEST.md` على جهازين.
-2. رفع المشروع إلى GitHub وتعيين الأسرار (`ANDROID_KEYSTORE` Base64 / `ANDROID_KEYSTORE_PASS` / `ANDROID_ALIAS=benpos`) ثم Tag `v1.1.0` ليتفعّل CI وينتج Windows zip + APK موقّع.
-3. اختياري: زر "الإبلاغ عن مشكلة" بإرفاق سجل الأخطاء.
+### إصلاح 404 "لا توجد صفحة"
+كان الرابط الافتراضي `github.com/BENPOSDZ/BENPOSDZ` (غير موجود). **حُدِّث إلى** `github.com/issambenchellali/BENPOSDZ` في `UpdateService.cs` و`installer\BENPOSDZ.iss` وPROGRESS_REPORT.md.
+> إذا كانت قاعدة قديمة تحمل الرابط الخطأ في إعداد `UpdateRepoUrl`، امسح القيمة من "الإعدادات ▸ التحديثات" ليعود الافتراضي الصحيح.
 
+## 5. التثبيت
+- **ويندوز**: شغّل `BENPOSDZ_Setup_X.Y.Z.exe` (بلا صلاحيات إدارية) أو انسخ مجلد البرنامج كاملاً.
+- **أندرويد**: ثبّت `dz.benpos.pos-Signed.apk` (minSdk 24).
+- الحسابات الافتراضية: `admin/123` (غيّرها فوراً) و`123/123`.
 
-## Relevant Files
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\BENPOSDZ.csproj`: TargetFrameworks مزدوج + توقيع شرطي.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Services\PrintService.cs`: طباعة/مشاركة متعددة المنصات.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Services\SecretProtector.cs`: DPAPI (Win) / AndroidKeystore AES-GCM (And) / B64 احتياطي.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Services\AuthService.cs` + `UpdateService.cs`: `GetMachineId` أندرويد + تعطيل التحديث على أندرويد.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Components\Layout\MainLayout.razor` + `wwwroot\css\app.css`: شريط تنقل سفلي + CSS جوال.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Components\Pages\Settings.razor`: زر مشاركة + `sysPrintService`.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\Services\UpdateService.cs` + `BENPOSUpdater\Program.cs`: منجز من المرحلة 1.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\scripts\publish.ps1` + `.github\workflows\release.yml`: منجز — ستُضاف وظيفة build أندرويد.
-- `D:\PROG\C_Sharp\BENPOSDZ_BLAZOR\BENPOSDZ\PROGRESS_REPORT.md`: قسم 13 (تحديثات) + قسم 14 (أندرويد).
+## 6. الملفات الرئيسية
+- `BENPOSDZ\Services\LicenseService.cs` — الإصدارات والترخيص.
+- `BENPOSDZ\Services\AuditService.cs` — التدقيق المالي + الإصلاحات.
+- `BENPOSDZ\Services\UpdateService.cs` — فحص/تنزيل/تثبيت التحديثات.
+- `BENPOSDZ\Services\PrintService.cs` — طباعة/مشاركة (ويندوز/أندرويد).
+- `BENPOSDZ\Services\DatabaseService.cs` — المخطط، النسخ الاحتياطي، الترحيل.
+- `BENPOSDZ\Components\Pages\Settings.razor` — التفعيل، الإصدارات، النسخ، التحديثات.
+- `BENPOSUpdater\Program.cs` — المحدّث الذاتي (self-contained).
+- `installer\BENPOSDZ.iss` — سكربت المثبّت.
+- `scripts\publish.ps1` + `.github\workflows\release.yml` — خط النشر.
+- `internal-tools\internal-licmgr\` — أداة توليد الأكواد (F/P/M).
+
+## 7. خطوات متبقية اختيارية
+1. تنفيذ `docs\FIELD_TEST.md` على جهازين فعليين.
+2. تعيين أسرار GitHub الثلاثة (ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASS / ANDROID_ALIAS) ثم Tag للإصدار الرسمي عبر CI.
+3. قرار التوزيع: Releases (جاهز) أو Google Play (لاحقاً).
+
+## 8. آخر Commits
+- `47733f9` — إصدارات Mono/Multi/Full + التدقيق المالي + إصلاح المخطط.
+- `5acfe9b` — الطباعة/التصدير + FileDialogService.LastError.
+- `abee8a7` — التوزيع: internal-licmgr + internal-codegen (M/P/F) + مثبّت Inno Setup + publish.ps1.
