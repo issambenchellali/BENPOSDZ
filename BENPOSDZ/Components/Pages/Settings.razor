@@ -15,6 +15,7 @@
 @inject CloudSyncService cloudSyncService
 @inject UpdateService updateService
 @inject FileDialogService fileDialogService
+@inject ImportService importService
     @inject NetworkScanner scanner
     @inject BarcodeService barcodeService
 @implements IDisposable
@@ -541,6 +542,22 @@ else if (currentTab == "transfer")
             </button>
         </div>
         <hr />
+        <div class="form-group">
+            <label>📦 استيراد المنتجات من قاعدة قديمة (ملف SQLite .db):</label>
+            <p style="color:#666; font-size:13px;">
+                اختر ملف قاعدة بيانات قديمة (مثل نسخة StockDB.db من جهاز آخر أو نسخة سابقة). يتم استيراد
+                <strong>الأنواع والمنتجات الجديدة فقط</strong> — تُتجاهل المنتجات المكررة (نفس المعرّف، الباركود، أو المرجع)
+                ولا تتأثر بياناتك الحالية.
+            </p>
+            <button class="btn-save" style="background:#6f42c1;" @onclick="ImportProductsFromOldDb" disabled="@isImporting">
+                📦 @(isImporting ? "جاري الاستيراد..." : "استيراد المنتجات من ملف...")
+            </button>
+            @if (importResultMsg != null)
+            {
+                <p style="font-size:13px; margin-top:8px; word-break:break-word;">@importResultMsg</p>
+            }
+        </div>
+        <hr />
         <div class="form-group danger-zone">
             <label style="color:#dc3545; font-size:16px;">🗑️ تفريغ Supabase</label>
             <p style="color:#dc3545; font-size:13px; margin:5px 0;">
@@ -816,6 +833,8 @@ else if (currentTab == "update")
     private const string K_BarcodeCopies = "BarcodeCopies";
     private string lastBackupPath = "";
     private bool backupBusy = false;
+    private bool isImporting = false;
+    private string? importResultMsg;
     private bool wipeResetStock = false;
 
     private string currentAppVersion = "";
@@ -1725,6 +1744,41 @@ else if (currentTab == "update")
         finally
         {
             backupBusy = false;
+        }
+    }
+
+    // استيراد المنتجات والأنواع من قاعدة قديمة (ملف SQLite .db) — دمج بدون مسح البيانات الحالية
+    private async Task ImportProductsFromOldDb()
+    {
+        if (isImporting) return;
+        isImporting = true;
+        importResultMsg = null;
+        try
+        {
+            var pickResult = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "اختر ملف القاعدة القديمة (.db)",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.WinUI, new[] { ".db", ".sqlite", "*" } },
+                    { DevicePlatform.Android, new[] { "application/octet-stream", "application/x-sqlite3", "*/*" } },
+                })
+            });
+            if (pickResult == null) return; // المستخدم ألغى
+
+            using var stream = await pickResult.OpenReadAsync();
+            var result = await importService.ImportProductsFromDatabaseAsync(stream);
+            importResultMsg = $"✅ تم استيراد {result.Imported} منتج و{result.TypesImported} نوع. (تخطّى {result.Skipped} مكرراً)";
+            toastService.ShowSuccess($"تم استيراد {result.Imported} منتجاً", "📦 الاستيراد");
+        }
+        catch (Exception ex)
+        {
+            importResultMsg = "❌ فشل الاستيراد: " + ex.Message;
+            toastService.ShowError("فشل الاستيراد: " + ex.Message, "❌ الاستيراد");
+        }
+        finally
+        {
+            isImporting = false;
         }
     }
 

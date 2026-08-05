@@ -57,6 +57,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PrintService>();
 		builder.Services.AddSingleton<NetworkScanner>();
 		builder.Services.AddSingleton<FileDialogService>();
+		builder.Services.AddSingleton<ImportService>();
         var app = builder.Build();
         
         // تشغيل الخدمة الخلفية يدوياً بعد بناء التطبيق
