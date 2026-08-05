@@ -14,6 +14,7 @@
 @inject DataTransferService dataTransferService
 @inject CloudSyncService cloudSyncService
 @inject UpdateService updateService
+@inject FileDialogService fileDialogService
     @inject NetworkScanner scanner
     @inject BarcodeService barcodeService
 @implements IDisposable
@@ -471,6 +472,18 @@ else if (currentTab == "backup")
                 <small style="color:#666; word-break:break-all;">آخر نسخة: @lastBackupPath</small>
             }
         </div>
+        <div class="form-group">
+            <label>التصدير والاستعادة من ملف (فلاشة USB / مجلد):</label>
+            <div class="backup-row">
+                <button class="btn-save" style="background: #6f42c1;" @onclick="ExportBackupToFile" disabled="@backupBusy">
+                    @(backupBusy ? "⏳ جارٍ التصدير..." : "💾 تصدير نسخة إلى ملف...")
+                </button>
+                <button class="btn-save" style="background: #20c997;" @onclick="RestoreBackupFromFile" disabled="@backupBusy">
+                    @(backupBusy ? "⏳ جارٍ الاستعادة..." : "📂 استعادة من ملف...")
+                </button>
+            </div>
+            <small style="color:#666;">تصدير نسخة كاملة من قاعدة البيانات إلى موقع تختاره (USB أو مجلد)، أو استعادة قاعدة البيانات من ملف نسخة محفوظ. تُؤخذ نسخة أمان تلقائياً قبل أي استعادة.</small>
+        </div>
         <hr />
         <div class="form-group">
             <label>صيانة قاعدة البيانات:</label>
@@ -802,6 +815,7 @@ else if (currentTab == "update")
     private const string K_BarcodeShowHigherPrice = "BarcodeShowHigherPrice";
     private const string K_BarcodeCopies = "BarcodeCopies";
     private string lastBackupPath = "";
+    private bool backupBusy = false;
     private bool wipeResetStock = false;
 
     private string currentAppVersion = "";
@@ -1655,6 +1669,62 @@ else if (currentTab == "update")
         catch (Exception ex)
         {
             toastService.ShowError("فشلت الاستعادة: " + ex.Message, "❌ استعادة");
+        }
+    }
+
+    // تصدير نسخة احتياطية إلى ملف (فلاشة USB / مجلد) عبر حوار حفظ النظام
+    private async Task ExportBackupToFile()
+    {
+        if (backupBusy) return;
+        backupBusy = true;
+        try
+        {
+            string path = await fileDialogService.ExportBackupAsync();
+            if (!string.IsNullOrEmpty(path))
+            {
+                lastBackupPath = path;
+                toastService.ShowSuccess("تم تصدير النسخة الاحتياطية بنجاح", "💾 نسخة احتياطية");
+            }
+            else
+            {
+                toastService.ShowWarning("لم يتم التصدير (إلغاء أو خطأ).", "💾 نسخة احتياطية");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل التصدير: " + ex.Message, "❌ نسخة احتياطية");
+        }
+        finally
+        {
+            backupBusy = false;
+        }
+    }
+
+    // استعادة قاعدة البيانات من ملف نسخة احتياطية يختاره المستخدم
+    private async Task RestoreBackupFromFile()
+    {
+        if (backupBusy) return;
+        backupBusy = true;
+        try
+        {
+            string restored = await fileDialogService.RestoreBackupAsync();
+            if (!string.IsNullOrEmpty(restored))
+            {
+                toastService.ShowSuccess("تمت استعادة قاعدة البيانات من الملف بنجاح", "♻️ استعادة");
+                await LoadSettings();
+            }
+            else
+            {
+                toastService.ShowWarning("لم تتم الاستعادة (إلغاء أو خطأ).", "ℹ️ استعادة");
+            }
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشلت الاستعادة: " + ex.Message, "❌ استعادة");
+        }
+        finally
+        {
+            backupBusy = false;
         }
     }
 

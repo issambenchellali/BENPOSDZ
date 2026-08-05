@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using BENPOSDZ.Services;
 using Microsoft.Maui.LifecycleEvents;
+using CommunityToolkit.Maui;
 
 namespace BENPOSDZ;
 
@@ -11,6 +12,7 @@ public static class MauiProgram
 		var builder = MauiApp.CreateBuilder();
 		builder
 			.UseMauiApp<App>()
+			.UseMauiCommunityToolkit()
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -54,6 +56,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<BarcodeService>();
 		builder.Services.AddSingleton<PrintService>();
 		builder.Services.AddSingleton<NetworkScanner>();
+		builder.Services.AddSingleton<FileDialogService>();
         var app = builder.Build();
         
         // تشغيل الخدمة الخلفية يدوياً بعد بناء التطبيق

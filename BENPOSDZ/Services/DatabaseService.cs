@@ -107,6 +107,9 @@ namespace BENPOSDZ.Services
             return sqlite;
         }
 
+        // مسار ملف قاعدة البيانات المحلية (يُستخدم في التصدير/الاستعادة)
+        public string DatabaseFilePath => _sqliteDbPath;
+
         // اتصال مباشر بـ MySQL بغض النظر عن الوضع الحالي (يُستخدم في أداة نقل البيانات)
         public MySqlConnection CreateMySqlConnection()
         {
@@ -431,6 +434,63 @@ namespace BENPOSDZ.Services
             catch (Exception ex)
             {
                 LogEvent($"❌ فشل الاستعادة: {ex.Message}");
+                return "";
+            }
+        }
+
+        // إنشاء نسخة احتياطية إلى ملف محدد (فلاشة USB أو مجلد يختاره المستخدم) عبر Backup API
+        public string BackupDatabaseTo(string destPath)
+        {
+            try
+            {
+                string? dir = Path.GetDirectoryName(destPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                using (var source = new SqliteConnection(_sqliteConnectionString))
+                {
+                    source.Open();
+                    using (var dest = new SqliteConnection($"Data Source={destPath}"))
+                    {
+                        dest.Open();
+                        source.BackupDatabase(dest);
+                    }
+                }
+                LogEvent($"💾 تم تصدير نسخة احتياطية إلى: {destPath}");
+                return destPath;
+            }
+            catch (Exception ex)
+            {
+                LogEvent($"❌ فشل تصدير النسخة الاحتياطية: {ex.Message}");
+                return "";
+            }
+        }
+
+        // استعادة قاعدة البيانات من ملف نسخة احتياطية يختاره المستخدم (مع أخذ نسخة أمان تلقائية أولاً)
+        public string RestoreDatabaseFromFile(string srcPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(srcPath) || !File.Exists(srcPath))
+                {
+                    LogEvent("❌ ملف الاستعادة غير موجود.");
+                    return "";
+                }
+                // نسخة أمان تلقائية قبل أي استعادة
+                BackupDatabase();
+                using (var backup = new SqliteConnection($"Data Source={srcPath}"))
+                {
+                    backup.Open();
+                    using (var live = new SqliteConnection(_sqliteConnectionString))
+                    {
+                        live.Open();
+                        backup.BackupDatabase(live);
+                    }
+                }
+                LogEvent($"♻️ تمت استعادة قاعدة البيانات من: {Path.GetFileName(srcPath)}");
+                return srcPath;
+            }
+            catch (Exception ex)
+            {
+                LogEvent($"❌ فشل الاستعادة من الملف: {ex.Message}");
                 return "";
             }
         }
