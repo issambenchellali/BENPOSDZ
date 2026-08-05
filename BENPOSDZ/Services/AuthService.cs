@@ -135,6 +135,28 @@ namespace BENPOSDZ.Services
             }
         }
 
+        // تسجيل الدخول بكود التفعيل (6 أرقام): يُفعّل البرنامج ويدخل بحساب المدير مباشرة
+        public (bool Success, string? Error) TryLoginWithActivationCode(DatabaseService dbService, string enteredCode)
+        {
+            enteredCode = (enteredCode ?? "").Trim();
+            if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
+                return (false, "أدخل كود التفعيل المكوّن من 6 أرقام.");
+
+            if (!ValidateActivationCode(dbService, GetMachineId(), enteredCode))
+                return (false, "كود التفعيل غير صحيح. تأكد من الرقم الموجود في شاشة التفعيل (الإعدادات ▸ التفعيل).");
+
+            using var connection = dbService.CreateConnection();
+            var admin = connection.QueryFirstOrDefault<UserModel>("SELECT * FROM Users WHERE User_Name = 'admin' AND IsDeleted = 0");
+            if (admin == null)
+                return (false, "لم يتم العثور على حساب المدير في قاعدة البيانات.");
+
+            Login(admin);
+            IsLicensed = true;
+            IsTrialExpired = false;
+            dbService.LogEvent("🔑 تم تسجيل الدخول بكود التفعيل.");
+            return (true, null);
+        }
+
         public DateTime AddLicenseTime(DatabaseService dbService, int yearsToAdd)
         {
             // 🔥 إجبار الاتصال المحلي

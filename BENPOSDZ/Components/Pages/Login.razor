@@ -162,6 +162,27 @@
             </div>
         }
 
+        <!-- الدخول بكود التفعيل (6 أرقام) -->
+        <div class="activation-login">
+            <button class="btn-code-login" @onclick="() => showCodeLogin = !showCodeLogin">
+                🔑 @(showCodeLogin ? "إخفاء الدخول بالكود" : "فتح البرنامج بكود التفعيل")
+            </button>
+            @if (showCodeLogin)
+            {
+                <div class="code-login-box">
+                    <p class="code-login-hint">أدخل كود التفعيل المكوّن من 6 أرقام الخاص بهذا الجهاز للدخول مباشرة بحساب المدير.</p>
+                    <div class="code-login-row">
+                        <input type="text" @bind="activationCode" maxlength="6" inputmode="numeric" placeholder="6 أرقام" class="code-input" />
+                        <button class="btn-login" style="width:auto; padding:10px 22px; font-size:15px;" @onclick="LoginWithCode">دخول</button>
+                    </div>
+                    @if (codeError != null)
+                    {
+                        <div class="error-message" style="margin-top:10px;">@codeError</div>
+                    }
+                </div>
+            }
+        </div>
+
         <!-- صندوق سجل أخطاء الدخول (Architecture Log Viewer) -->
         @if (showLogs)
         {
@@ -258,6 +279,15 @@
     .btn-toggle-logs { background: none; border: none; color: #6c757d; font-size: 12px; cursor: pointer; margin: 10px 0 14px; }
     .btn-toggle-logs:hover { text-decoration: underline; }
 
+    /* === الدخول بكود التفعيل === */
+    .activation-login { margin-top: 6px; padding: 0 30px 10px; }
+    .btn-code-login { width: 100%; padding: 11px; background: #6f42c1; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: bold; transition: background-color 0.3s; }
+    .btn-code-login:hover { background: #5a32a3; }
+    .code-login-box { margin-top: 12px; background: #f8f4ff; border: 1px solid #e2d9f5; border-radius: 8px; padding: 14px; }
+    .code-login-hint { font-size: 12px; color: #5b4b7a; margin: 0 0 10px; text-align: right; }
+    .code-login-row { display: flex; gap: 8px; align-items: center; }
+    .code-input { flex: 1; text-align: center; letter-spacing: 6px; font-size: 20px; font-weight: bold; direction: ltr; }
+
     @@media (max-width: 768px) {
         .login-container { height: auto; min-height: 100vh; padding: 12px; align-items: flex-start; }
         .login-card { width: 100%; max-width: 100%; border-radius: 10px; }
@@ -266,6 +296,7 @@
         .btn-login { padding: 16px; font-size: 18px; }
         .force-change-box { padding: 20px 16px; }
         .log-viewer { padding: 0 16px; }
+        .activation-login { padding: 0 16px 10px; }
     }
 </style>
 
@@ -274,6 +305,10 @@
     private string? errorMessage;
     private bool showLogs = false;
     private bool drawerOpen = false;
+
+    private bool showCodeLogin = false;
+    private string activationCode = "";
+    private string? codeError;
 
     private bool showForceChange = false;
     private string newPass = "";
@@ -296,6 +331,20 @@
 
     // تبديل وضع قاعدة البيانات عبر المفتاح المنزلق (Local ↔ LAN)
     private void ToggleDbMode() => ChangeDbMode(dbMode == "Local" ? "LAN" : "Local");
+
+    // تسجيل الدخول بكود التفعيل (6 أرقام) — دخول مباشر بحساب المدير بدون اسم مستخدم وكلمة مرور
+    private void LoginWithCode()
+    {
+        codeError = null;
+        var (success, error) = authService.TryLoginWithActivationCode(dbService, activationCode);
+        if (!success)
+        {
+            codeError = error;
+            return;
+        }
+        errorMessage = null;
+        Navigation.NavigateTo("/pos");
+    }
 
     private async Task ChangePasswordNow()
     {
