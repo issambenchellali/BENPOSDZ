@@ -25,17 +25,16 @@
 | 10 | **نظام التحديثات التلقائي**: UpdateService + BENPOSUpdater + version.json + release.yml |
 | 11 | **أندرويد**: net8.0-android، طباعة/مشاركة، ترخيص بالجهاز، واجهة متجاوبة |
 | 12 | **التحضير للإطلاق**: keystore موقّع، APK Release، CI، دليل المستخدم والاختبار الميداني |
-| 13 | **الإصدارات Mono/Multi/Full** + كود تفعيل 7 خانات + واجهة "نوع النسخة" |
+| 13 | **الإصدارات Mono/Multi/Full** + واجهة "نوع النسخة" |
 | 14 | **التدقيق المالي** مع إصلاح ذاتي (RunFullAuditAsync / FixInvoiceTotalsAsync) + إصلاح المخطط |
 | 15 | **الطباعة والتصدير**: PrintService محصّن (أندرويد/ويندوز)، FileDialogService.LastError، رسائل واضحة |
-| 16 | **التوزيع**: internal-licmgr، مثبّت Inno Setup، publish.ps1 بخطوة المثبّت، إصلاح رابط الـ 404 |
+| 16 | **التوزيع**: مثبّت Inno Setup، publish.ps1 بخطوة المثبّت، إصلاح رابط الـ 404 |
 
 ## 3. الإصدارات والترخيص
 - **Mono (M)** — أساسية: جهاز واحد، بلا شبكة/سحابة.
 - **Multi (P)** — متعددة: شبكة محلية MySQL.
 - **Full (F)** — كاملة: شبكة + مزامنة Supabase.
-- كود التفعيل 7 خانات (حرف + 6 أرقام)، مرتبط بالجهاز والساعة، استخدام واحد، ولا تُتراكم السنوات. الأكواد القديمة (6 أرقام) تبقى مقبولة كنسخة كاملة.
-- التوليد: `internal-tools\internal-licmgr` (سطر أوامر: `-m <id> -e F|P|M`، `-daily`) أو `internal-codegen` (واجهة مع مُحدِّد الإصدار + نسخ للحافظة).
+- **التفعيل من جانب الزبون**: الإعدادات ← 🔑 التفعيل ← أرسل الـ Machine ID للموزّع ← أدخل الكود المستلَم؛ أو استخدم فلاشة مفاتيح تحتوي `benpos.lic` باسم المتجر. التفاصيل في `docs\USER_MANUAL.md`.
 
 ## 4. التحديثات والنشر
 - **`scripts\publish.ps1 -Version X.Y.Z -Repo "issambenchellali/BENPOSDZ"`** ينتج في `releases\`:
@@ -64,7 +63,6 @@
 - `BENPOSUpdater\Program.cs` — المحدّث الذاتي (self-contained).
 - `installer\BENPOSDZ.iss` — سكربت المثبّت.
 - `scripts\publish.ps1` + `.github\workflows\release.yml` — خط النشر.
-- `internal-tools\internal-licmgr\` — أداة توليد الأكواد (F/P/M).
 
 ## 7. خطوات متبقية اختيارية
 1. تنفيذ `docs\FIELD_TEST.md` على جهازين فعليين.
@@ -74,4 +72,4 @@
 ## 8. آخر Commits
 - `47733f9` — إصدارات Mono/Multi/Full + التدقيق المالي + إصلاح المخطط.
 - `5acfe9b` — الطباعة/التصدير + FileDialogService.LastError.
-- `abee8a7` — التوزيع: internal-licmgr + internal-codegen (M/P/F) + مثبّت Inno Setup + publish.ps1.
+- `abee8a7` — التوزيع: مثبّت Inno Setup + publish.ps1.

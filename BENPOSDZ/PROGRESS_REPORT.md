@@ -26,11 +26,11 @@
 ### 2.1 `Services\SecurityService.cs` — إعادة كتابة كاملة
 - التخزين الآمن الجديد لكلمات المرور: **PBKDF2** (`Rfc2898DeriveBytes`).
 - التنسيق: `PBKDF2$iterations$saltBase64$hashBase64` — Salt عشوائي 16 بايت لكل مستخدم، 100,000 تكرار.
-- `IsLegacyHash()` يتعرف على الهاش القديم (SHA256 + Salt ثابت `BENPOS_DZ_LEGACY_SALT`).
+- `IsLegacyHash()` يتعرف على الهاش القديم (SHA256 + salt ثابت).
 - `VerifyPassword()` يتعامل مع التنسيقين: هاش جديد أو قديم (للترحيل).
 
 ### 2.2 `Services\AuthService.cs` — سر التفعيل قابل للتكوين
-- `DefaultActivationSecret` ثابت افتراضي = `BENPOS_DZ_ACTIVATION_KEY`.
+- سر التفعيل الافتراضي قابل للتغيير: `GetActivationSecret(DatabaseService)` يقرأ من AppSettings (لا يُكتب في الوثائق).
 - `GetActivationSecret(DatabaseService)` يقرأ المفتاح من AppSettings (`ActivationSecret`) — يمكن للمالك تغييره.
 - `ValidateActivationCode(DatabaseService, machineId, enteredCode)` — التوقيع الجديد يتلقى `dbService`.
 
@@ -151,14 +151,13 @@
 - زر "🔍 اكتشاف الخادم" في تبويب الاتصال يعرض الخوادم المكتشفة للاختيار بنقرة.
 
 ### 4.9 أمان MySQL — سكريبت إنشاء آمن
-- `internal-tools\Database\mysql_setup.sql`: مستخدمان فقط — `'benpos_user'@'localhost'` و`'benpos_user'@'192.168.%'` — بلا `%`، مع تنبيهات بإغلاق المنفذ 3306 من الراوتر وتغيير كلمة المرور.
+- سكريبت إنشاء MySQL يُنشئ مستخدمين اثنين فقط — `'benpos_user'@'localhost'` و`'benpos_user'@'192.168.%'` — بلا `%`، مع تنبيهات بإغلاق المنفذ 3306 من الراوتر وتغيير كلمة المرور.
 
-### 4.10 أدوات التفعيل (internal-tools)
-- `internal-generator` (GUI عربي): يبني `benpos.lic` من (اسم المتجر|الأجهزة|السنوات)، أزرار سنة/3 سنوات، كتابة مباشرة على الفلاشة أو سطح المكتب، ونسخ Base64.
-- `internal-1y` و`internal-3y` للتشغيل السريع، و`internal-codegen` لكود التفعيل لجهاز محدد.
+### 4.10 تفعيل الزبون
+- يُفعَّل البرنامج من **الإعدادات ← 🔑 التفعيل**: يظهر Machine ID للجهاز، يرسله الزبون للموزّع ويستلم كوداً، أو يستخدم فلاشة مفاتيح تحتوي `benpos.lic` باسم متجره.
 
 ### 4.11 دليل النشر
-- `internal-tools\README.ini`: دليل تثبيت خطوة بخطوة (محلي/شبكي، الأمان، التفعيل، السجل، استكشاف الأخطاء).
+- `docs\USER_MANUAL.md`: دليل تثبيت واستخدام كامل للزبون (محلي/شبكي، الأمان، التفعيل، السجل، استكشاف الأخطاء).
 
 ### 4.12 فحص دقة الحسابات المالية
 - `AuditFinancialAccuracyAsync()`: يتحقق أن مجموع التفاصيل = سعر الفاتورة، وأن المدفوع+الدين = السعر، ويكشف الفواتير بلا تفاصيل، ويحسب إجمالي المبيعات/المشتريات.
@@ -255,8 +254,7 @@
 ## 8. المرحلة الثامنة: مفتاح التفعيل القابل للتغيير + استعادة آمنة + توثيق Supabase + قياس الأداء
 
 ### 8.1 مفتاح التفعيل قابل للتغيير من واجهة المالك
-- `AuthService.SetActivationSecret`/`HasCustomActivationSecret`: حفظ/كشف السر في AppSettings.
-- تبويب **🔑 التفعيل** في الإعدادات: حقل مفتاح التفعيل + زر حفظ مع تأكيد تنبيه أن الأكواد القديمة تصبح غير صالحة.
+- يمكن للمالك تغيير مفتاح التفعيل من الإعدادات؛ عند تغييره تصبح الأكواد الصادرة سابقاً غير صالحة.
 
 ### 8.2 استعادة آمنة لقاعدة مقفلة
 - `BackupDatabase`/`RestoreLatestBackup` أُعيدا عبر **SQLite Backup API** (`SqliteConnection.BackupDatabase`) بدل `File.Copy` — يعملان الآن حتى أثناء تشغيل القاعدة أو قفلها.
@@ -317,7 +315,7 @@
 ### المرحلة 9.2: الأمان المتقدم
 - [x] تشفير `SupabaseKey` و`MySQL_Pass` (DPAPI على Windows).
 - [x] تغيير إجباري لكلمة مرور المسؤول الافتراضية.
-- [x] جعل `DefaultActivationSecret` قابلاً للتغيير من واجهة المالك.
+- [x] إتاحة تغيير مفتاح التفعيل من واجهة المالك.
 - [x] منع تعديل `StoreNameLocked` بعد التفعيل بالفلاشة.
 
 ### المرحلة 9.3: (أُلغيت) تكامل Google Sheets
@@ -426,8 +424,8 @@
 
 ### ملاحظات من الفحص الواقعي
 - المزامنة على أندرويد تعمل عبر **Supabase** (`BackgroundSyncService` + `CloudSyncService` كل 15 ثانية) وليس MySQL مباشرة؛ وضع MySQL/LAN مخصص لأجهزة ويندوز على شبكة محلية.
-- التفعيل: كود 6 أرقام = internal-algo، والمولّد `internal-tools\internal-codegen` متوافق مع السر الافتراضي فقط (`BENPOS_DZ_ACTIVATION_KEY`) — إن غُيّر السر من الإعدادات يجب توليد الكود بسر جديد.
-- `BitConverter` (صغير النهاية) متطابق بين ويندوز وأندرويد → نفس الكود صالح على المنصتين لنفس الـ Machine ID.
+- التفعيل مربوط بالجهاز عبر كود يُسلَّم من الموزّع، وبالفلاشة (`benpos.lic`) لنقل الترخيص إلى أجهزة أخرى.
+- الكود صالح على منصتي ويندوز وأندرويد لنفس الـ Machine ID.
 
 ### خطوات متبقية قبل الإطلاق
 1. تنفيذ `docs\FIELD_TEST.md` على جهازين فعليين.
@@ -443,7 +441,7 @@
 ### نظام الإصدارات
 - **`Services\LicenseService.cs`** (جديد) — محور الترخيص:
   - ثلاث إصدارات: `EditionMono` (أساسية — جهاز واحد، بلا شبكة/سحابة)، `EditionMulti` (متعددة — شبكة MySQL)، `EditionFull` (كاملة — شبكة + مزامنة Supabase).
-  - **كود التفعيل أصبح 7 خانات**: حرف النسخة + 6 أرقام (M/P/F). خوارزمية: `internal-algo`.
+  - **كود التفعيل أصبح 7 خانات**: حرف النسخة + 6 أرقام (M/P/F)، مرتبط بالجهاز.
   - **الأكواد القديمة (6 أرقام) تبقى مقبولة** وتُعتبر نسخة كاملة (توافقية).
   - واجهة ثابتة: `EditionLabel`/`EditionPrefix`/`EditionFromPrefix`/`AllEditions`/`GetEdition`/`SetEdition`.
 - **`AuthService.TryActivateWithCode`** — التحقق من الكود وتحديد النسخة؛ تسجيل `K_Edition` في AppSettings.
@@ -488,15 +486,7 @@
 
 ---
 
-## 19. المرحلة السادسة عشرة: التوزيع — مثبّت ويندوز + internal-licmgr + Release
-
-### أداة التوليد `internal-licmgr`
-- **`internal-tools\internal-licmgr`** (مشروع .NET 8 console، self-contained win-x64، net8.0):
-  - `-m <MachineId> -e F|P|M` — كود تفعيل بالإصدار المطلوب (خوارزمية مطابقة تماماً لـ `LicenseService`).
-  - `-s <secret>` — بسر تفعيل مخصص، `-daily` — كود الدخول اليومي.
-  - عرض عربي سليم (Console UTF-8). نُسخ واختُبر بنجاح (M/P/F + daily).
-- **`internal-codegen`** — أصبح فيه **مُحدِّد إصدار (M/P/F)** مع توليد كود مُسبَّق + نسخ تلقائي للحافظة.
-- **`internal-tools\README.md`** — حُدّث بالكامل لنظام الإصدارات الثلاث وطريقة internal-licmgr.
+## 19. المرحلة السادسة عشرة: التوزيع — مثبّت ويندوز + Release
 
 ### مثبّت ويندوز (Inno Setup)
 - ثُبّت **Inno Setup 7.0.2** (per-user، `C:\Users\Issam\AppData\Local\Programs\Inno Setup 7\ISCC.exe`).
@@ -521,7 +511,7 @@
 ### البناء والتحقق النهائي
 - **ويندوز** (`net8.0-windows10.0.19041.0`): 0 أخطاء / 0 تحذيرات.
 - **أندرويد** (`net8.0-android`): 0 أخطاء / 0 تحذيرات.
-- **Commits الأخيرة**: `47733f9` (إصدارات + تدقيق)، `5acfe9b` (طباعة/تصدير)، `abee8a7` (توزيع + internal-licmgr + مثبّت).
+- **Commits الأخيرة**: `47733f9` (إصدارات + تدقيق)، `5acfe9b` (طباعة/تصدير)، `abee8a7` (توزيع + مثبّت).
 
 
 

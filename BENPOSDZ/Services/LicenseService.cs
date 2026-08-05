@@ -3,7 +3,7 @@ using Dapper;
 namespace BENPOSDZ.Services
 {
     // نظام الترخيص: ثلاث نسخ (Mono / Multi / Full) + أكواد التفعيل والترقية والدخول اليومي.
-    // نفس الخوارزمية تُستخدم في أداة internal-licmgr (مجلد internal-tools\internal-licmgr).
+    // الخوارزمية خاصة: لا تُنسخ ولا تُوثّق خارج هذا الكود.
     public class LicenseService
     {
         public const string EditionMono = "Mono";
