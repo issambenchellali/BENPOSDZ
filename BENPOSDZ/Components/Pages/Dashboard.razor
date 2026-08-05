@@ -24,8 +24,8 @@
             @if (authService.IsAdmin)
             {
                 <button class="fin-btn" @onclick="OpenTransferModal">↔️ نقل إلى الخزنة</button>
-                <button class="fin-btn green" @onclick="OpenExpenseModal">+ مصروف جديد</button>
             }
+            <button class="fin-btn green" @onclick="OpenExpenseModal">+ مصروف جديد</button>
             <button class="fin-btn ref" @onclick="LoadAllAsync">🔄 تحديث</button>
         </div>
     </div>
@@ -418,12 +418,9 @@
 
         try
         {
-            if (authService.IsAdmin)
-            {
-                using var localConn = dbService.CreateLocalConnection();
-                var settingVal = await localConn.QueryFirstOrDefaultAsync<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ShowCaisseToVendeur'");
-                settingsShowCaisse = (settingVal == "true");
-            }
+            using var localConn = dbService.CreateLocalConnection();
+            var settingVal = await localConn.QueryFirstOrDefaultAsync<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ShowCaisseToVendeur'");
+            settingsShowCaisse = (settingVal == "true");
 
             await LoadAllAsync();
         }
@@ -569,7 +566,6 @@
 
     private async Task SaveExpense()
     {
-        if (!authService.IsAdmin) return;
         if (newExpensePrice <= 0 || string.IsNullOrWhiteSpace(newExpenseName))
         {
             toastService.ShowWarning("الرجاء إدخال اسم والمبلغ.", "⚠️ المصروف");
