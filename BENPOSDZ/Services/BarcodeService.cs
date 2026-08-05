@@ -75,6 +75,18 @@ namespace BENPOSDZ.Services
             return opts;
         }
 
+        // هل المسح المستمر بالكاميرا مفعّل؟ (إعداد في AppSettings — افتراضياً مفعّل)
+        public bool IsContinuousScanEnabled()
+        {
+            try
+            {
+                using var conn = _db.CreateLocalConnection();
+                var v = conn.QueryFirstOrDefault<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'ContinuousScan'");
+                return v != "false";
+            }
+            catch { return true; }
+        }
+
         // هل نحن على منصة أندرويد (تظهر أزرار المسح بالكاميرا فقط هناك)
         public static bool IsAndroid
         {
@@ -172,20 +184,34 @@ namespace BENPOSDZ.Services
                 using var stream = await photo.OpenReadAsync();
                 var bitmap = await Android.Graphics.BitmapFactory.DecodeStreamAsync(stream);
                 if (bitmap == null) return null;
+                string? result = DecodeBarcodeFromBitmap(bitmap);
+                if (!bitmap.IsRecycled) bitmap.Recycle();
+                return result;
+            }
+            catch { return null; }
+        }
+
+        // فك الباركود من صورة نقطية (تُستخدم أيضاً في المسح المستمر عبر المعاينة الحية)
+        public static string? DecodeBarcodeFromBitmap(Android.Graphics.Bitmap source)
+        {
+            try
+            {
+                if (source == null || source.Width == 0 || source.Height == 0) return null;
+                var bitmap = source;
 
                 // تصغير الصور الكبيرة لتسريع الفحص
                 if (bitmap.Width > 1600 || bitmap.Height > 1600)
                 {
                     float scale = Math.Min(1600f / bitmap.Width, 1600f / bitmap.Height);
                     var scaled = Android.Graphics.Bitmap.CreateScaledBitmap(bitmap, (int)(bitmap.Width * scale), (int)(bitmap.Height * scale), false);
-                    bitmap.Recycle();
+                    if (!ReferenceEquals(scaled, bitmap) && !bitmap.IsRecycled) bitmap.Recycle();
                     bitmap = scaled;
                 }
 
                 int w = bitmap.Width, h = bitmap.Height;
                 var pixels = new int[w * h];
                 bitmap.GetPixels(pixels, 0, w, 0, 0, w, h);
-                bitmap.Recycle();
+                if (!bitmap.IsRecycled && !ReferenceEquals(bitmap, source)) bitmap.Recycle();
 
                 // ARGB_8888 → RGB24
                 var rgb = new byte[pixels.Length * 3];

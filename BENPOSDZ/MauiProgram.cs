@@ -2,6 +2,7 @@
 using BENPOSDZ.Services;
 using Microsoft.Maui.LifecycleEvents;
 using CommunityToolkit.Maui;
+using Camera.MAUI;
 
 namespace BENPOSDZ;
 
@@ -13,6 +14,7 @@ public static class MauiProgram
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit()
+			.UseMauiCameraView()
 			.ConfigureFonts(fonts =>
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");

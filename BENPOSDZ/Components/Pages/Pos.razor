@@ -6,6 +6,7 @@
 @inject IJSRuntime JS
 @inject ImageService imageService
 @inject AuthService authService
+@inject BarcodeService barcodeService
 @inject PrintTemplateService printService
 @inject PrintService sysPrintService
 @inject ToastService toastService
@@ -387,6 +388,11 @@
     private List<CartTab> openTabs = new List<CartTab>();
     private string activeTabId = "";
 
+#if ANDROID
+    private bool _scanPageOpen = false;
+#endif
+    private bool _scanBusy = false;
+
     private CartTab? ActiveCart => openTabs.FirstOrDefault(t => t.Id == activeTabId);
 
     protected override async Task OnInitializedAsync()
@@ -491,6 +497,32 @@
             toastService.ShowWarning("المسح بالكاميرا متاح فقط على أندرويد.", "📷 الباركود");
             return;
         }
+
+        // المسح المستمر: شاشة كاميرا حية تقرأ منتجات متتالية بدون زر لكل منتج
+        if (barcodeService.IsContinuousScanEnabled())
+        {
+#if ANDROID
+            if (_scanPageOpen) return;
+            var status = await Permissions.RequestAsync<Permissions.Camera>();
+            if (status != PermissionStatus.Granted)
+            {
+                toastService.ShowWarning("لم يتم منح إذن الكاميرا.", "📷 الباركود");
+                return;
+            }
+            _scanPageOpen = true;
+            try
+            {
+                await BarcodeScannerPage.ScanAsync(code => _ = HandleScannedCodeAsync(code));
+            }
+            finally
+            {
+                _scanPageOpen = false;
+            }
+#endif
+            return;
+        }
+
+        // مسح صورة واحدة (الوضع القديم عندما يكون المسح المستمر معطلاً)
         try
         {
             var status = await Permissions.RequestAsync<Permissions.Camera>();
@@ -510,6 +542,21 @@
                 return;
             }
 
+            await HandleScannedCodeAsync(code);
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("خطأ أثناء المسح: " + ex.Message, "❌ الباركود");
+        }
+    }
+
+    // معالجة كود مقروء: إضافة المنتج للسلة إن وُجد
+    private async Task HandleScannedCodeAsync(string code)
+    {
+        if (_scanBusy) return;
+        _scanBusy = true;
+        try
+        {
             searchTerm = code;
             await SearchProductsAsync();
             bool added = await TryAddScannedBarcode(code);
@@ -522,9 +569,9 @@
                 toastService.ShowSuccessShort($"تمت إضافة المنتج إلى السلة.", "✅ الباركود");
             }
         }
-        catch (Exception ex)
+        finally
         {
-            toastService.ShowError("خطأ أثناء المسح: " + ex.Message, "❌ الباركود");
+            _scanBusy = false;
         }
     }
 

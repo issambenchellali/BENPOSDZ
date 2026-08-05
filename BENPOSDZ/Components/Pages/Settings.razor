@@ -367,6 +367,7 @@ else if (currentTab == "barcode")
                 <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowPrice" @onchange="ToggleBarcodeShowPrice" /> إظهار سعر التجزئة</label>
                 <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowQuantity" @onchange="ToggleBarcodeShowQuantity" /> إظهار الكمية</label>
                 <label class="checkbox-row"><input type="checkbox" checked="@BarcodeShowHigherPrice" @onchange="ToggleBarcodeShowHigherPrice" /> إظهار سعر التجزئة الأعلى</label>
+                <label class="checkbox-row"><input type="checkbox" checked="@ContinuousScanEnabled" @onchange="ToggleContinuousScan" /> المسح المستمر بالكاميرا (قراءة متتالية بدون زر)</label>
             </div>
 
             <div class="barcode-preview-box">
@@ -841,6 +842,7 @@ else if (currentTab == "update")
     private const string K_BarcodeShowQuantity = "BarcodeShowQuantity";
     private const string K_BarcodeShowHigherPrice = "BarcodeShowHigherPrice";
     private const string K_BarcodeCopies = "BarcodeCopies";
+    private const string K_ContinuousScan = "ContinuousScan";
     private string lastBackupPath = "";
     private bool backupBusy = false;
     private bool isImporting = false;
@@ -1094,6 +1096,7 @@ else if (currentTab == "update")
     private bool BarcodeShowPrice => !settings.ContainsKey(K_BarcodeShowPrice) || settings[K_BarcodeShowPrice] != "false";
     private bool BarcodeShowQuantity => settings.ContainsKey(K_BarcodeShowQuantity) && settings[K_BarcodeShowQuantity] == "true";
     private bool BarcodeShowHigherPrice => settings.ContainsKey(K_BarcodeShowHigherPrice) && settings[K_BarcodeShowHigherPrice] == "true";
+    private bool ContinuousScanEnabled => !settings.ContainsKey(K_ContinuousScan) || settings[K_ContinuousScan] != "false";
 
     private string barcodePreviewUri = "";
 
@@ -1247,6 +1250,7 @@ else if (currentTab == "update")
         if (!settings.ContainsKey(K_BarcodeShowQuantity)) settings[K_BarcodeShowQuantity] = "false";
         if (!settings.ContainsKey(K_BarcodeShowHigherPrice)) settings[K_BarcodeShowHigherPrice] = "false";
         if (!settings.ContainsKey(K_BarcodeCopies)) settings[K_BarcodeCopies] = "1";
+        if (!settings.ContainsKey(K_ContinuousScan)) settings[K_ContinuousScan] = "true";
     }
 
     private async Task SaveSettings()
@@ -1316,6 +1320,12 @@ else if (currentTab == "update")
     {
         settings[K_BarcodeShowHigherPrice] = (e.Value is bool val && val) ? "true" : "false";
         RefreshBarcodePreview();
+        await SaveBarcodeOption();
+    }
+
+    private async Task ToggleContinuousScan(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        settings[K_ContinuousScan] = (e.Value is bool val && val) ? "true" : "false";
         await SaveBarcodeOption();
     }
 
