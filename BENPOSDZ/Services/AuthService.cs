@@ -145,21 +145,10 @@ namespace BENPOSDZ.Services
 
         // الكود صالح فقط خلال الساعة التي وُلّد فيها (من 00 دقيقة حتى 59 من نفس الساعة).
         // يُقبل مع تفاوت ساعة واحدة أماماً وخلفاً لتجنب مشاكل فرق التوقيت بين المولد والجهاز.
+        // يدعم أكواد النسخ (M/P/F + 6 أرقام) وأكواد النسخ القديمة (6 أرقام فقط).
         public bool ValidateActivationCode(DatabaseService dbService, string machineId, string enteredCode)
         {
-            enteredCode = (enteredCode ?? "").Trim();
-            if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
-                return false;
-
-            string secret = GetActivationSecret(dbService);
-            var nowUtc = DateTime.UtcNow;
-            var nowLocal = DateTime.Now;
-            string[] stamps =
-            {
-                nowUtc.AddHours(-1).ToString("yyyyMMddHH"), nowUtc.ToString("yyyyMMddHH"), nowUtc.AddHours(1).ToString("yyyyMMddHH"),
-                nowLocal.AddHours(-1).ToString("yyyyMMddHH"), nowLocal.ToString("yyyyMMddHH"), nowLocal.AddHours(1).ToString("yyyyMMddHH")
-            };
-            return stamps.Any(s => ComputeCode(machineId, secret, s) == enteredCode);
+            return new LicenseService(dbService).ValidateActivationCode(machineId, enteredCode).Valid;
         }
 
         // هل استُخدم هذا الكود من قبل؟ (منع إعادة الاستخدام)
@@ -177,40 +166,33 @@ namespace BENPOSDZ.Services
                       At = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), Exp = expiry.ToString("yyyy-MM-dd HH:mm:ss") });
         }
 
-        // التفعيل الكامل: الكود صحيح (مرتبط بالساعة) + غير مستخدم من قبل + بدون تراكم سنوات
-        public (bool Success, string? Error, DateTime? Expiry) TryActivateWithCode(DatabaseService dbService, string enteredCode)
+        // التفعيل الكامل: الكود صحيح (مرتبط بالساعة) + غير مستخدم من قبل + بدون تراكم سنوات.
+        // يعيد أيضاً النسخة (Mono/Multi/Full) التي يفعّلها الكود.
+        public (bool Success, string? Error, DateTime? Expiry, string Edition) TryActivateWithCode(DatabaseService dbService, string enteredCode)
         {
             enteredCode = (enteredCode ?? "").Trim();
-            if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
-                return (false, "أدخل كود التفعيل المكوّن من 6 أرقام.", null);
+            if (string.IsNullOrWhiteSpace(enteredCode))
+                return (false, "أدخل كود التفعيل (حرف النسخة + 6 أرقام).", null, LicenseService.EditionFull);
 
+            var license = new LicenseService(dbService);
             string machineId = GetMachineId();
             if (IsActivationCodeUsed(dbService, enteredCode))
-                return (false, "هذا الكود مستخدم بالفعل ولا يمكن إعادة استخدامه.", null);
+                return (false, "هذا الكود مستخدم بالفعل ولا يمكن إعادة استخدامه.", null, license.GetEdition());
 
-            if (!ValidateActivationCode(dbService, machineId, enteredCode))
-                return (false, "كود التفعيل غير صحيح أو انتهت صلاحيته. الكود صالح فقط خلال الساعة التي وُلّد فيها.", null);
+            var (valid, edition) = license.ValidateActivationCode(machineId, enteredCode);
+            if (!valid)
+                return (false, "كود التفعيل غير صحيح أو انتهت صلاحيته. الكود صالح فقط خلال الساعة التي وُلّد فيها.", null, edition);
 
+            license.SetEdition(edition);
             DateTime newExp = AddLicenseTime(dbService, 1);
             RecordActivationUsage(dbService, enteredCode, newExp);
-            dbService.LogEvent("✅ تم تفعيل البرنامج بكود سري (استخدام واحد، مرتبط بالساعة).");
-            return (true, null, newExp);
+            dbService.LogEvent($"✅ تم تفعيل البرنامج (نسخة {LicenseService.EditionLabel(edition)}) بكود سري (استخدام واحد، مرتبط بالساعة).");
+            return (true, null, newExp, edition);
         }
 
         // كود الدخول اليومي (6 أرقام): مرتبط بالتاريخ فقط — نفس الكود على كل الأجهزة، صالح عدة مرات في نفس اليوم.
         // مختلف تماماً عن كود التفعيل (الذي يرتبط بالجهاز + الساعة + استخدام واحد).
-        private const string DailyCodeSalt = "BENPOS_DZ_DAILY_2024_DEV_KEY";
-
-        public string GetDailyLoginCode()
-        {
-            string raw = DateTime.Now.ToString("yyyy-MM-dd") + DailyCodeSalt;
-            using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
-            {
-                byte[] bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
-                int val = BitConverter.ToInt32(bytes, 0);
-                return (Math.Abs(val) % 1000000).ToString("D6");
-            }
-        }
+        public string GetDailyLoginCode() => LicenseService.ComputeDailyCode();
 
         // تسجيل الدخول بالكود اليومي (6 أرقام): لا يُفعّل البرنامج، فقط يدخل بحساب المدير
         public (bool Success, string? Error) TryLoginWithDailyCode(DatabaseService dbService, string enteredCode)

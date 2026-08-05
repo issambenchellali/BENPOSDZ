@@ -33,7 +33,22 @@ namespace BENPOSDZ.Services
                 old.Open();
 
                 // الأنواع من القاعدة القديمة (مع تجاهل التكرار)
-                var oldTypes = (await old.QueryAsync<dynamic>("SELECT * FROM Product_Types")).ToList();
+                // بعض القواعد القديمة لا تحتوي على جدول Product_Types — لا تفشل الاستيراد بسبب ذلك
+                var oldTypes = new List<dynamic>();
+                try
+                {
+                    bool hasTypes = await old.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'Product_Types'") > 0;
+                    if (hasTypes)
+                        oldTypes = (await old.QueryAsync<dynamic>("SELECT * FROM Product_Types")).ToList();
+                    else
+                        _db.LogEvent("ℹ️ القاعدة القديمة لا تحتوي على جدول Product_Types — تم تخطي استيراد الأنواع.");
+                }
+                catch (Exception ex)
+                {
+                    _db.LogEvent($"⚠️ تعذر قراءة أنواع القاعدة القديمة: {ex.Message}");
+                }
+
                 using var current = _db.CreateConnection();
                 string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -52,7 +67,16 @@ namespace BENPOSDZ.Services
                     }
                 }
 
-                var oldProducts = (await old.QueryAsync<dynamic>("SELECT * FROM Products")).ToList();
+                var oldProducts = new List<dynamic>();
+                try
+                {
+                    oldProducts = (await old.QueryAsync<dynamic>("SELECT * FROM Products")).ToList();
+                }
+                catch (Exception ex)
+                {
+                    _db.LogEvent($"⚠️ تعذر قراءة منتجات القاعدة القديمة: {ex.Message}");
+                }
+
                 foreach (var p in oldProducts)
                 {
                     var d = (IDictionary<string, object?>)p;

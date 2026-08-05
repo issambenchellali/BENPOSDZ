@@ -18,15 +18,17 @@
 @inject ImportService importService
     @inject NetworkScanner scanner
     @inject BarcodeService barcodeService
+@inject LicenseService licenseService
+@inject AuditService auditService
 @implements IDisposable
 
 <h2>الإعدادات العامة</h2>
 
 <div class="tabs">
     <button class="tab-btn @(currentTab == "store" ? "active" : "")" @onclick='() => SwitchTab("store")'>🏪 المتجر</button>
+    <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
     @if (ShowAdvancedTabs)
     {
-        <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
         <button class="tab-btn @(currentTab == "print" ? "active" : "")" @onclick='() => SwitchTab("print")'>🖨️ الطباعة</button>
         <button class="tab-btn @(currentTab == "barcode" ? "active" : "")" @onclick='() => SwitchTab("barcode")'>🏷️ الباركود</button>
         <button class="tab-btn @(currentTab == "conn" ? "active" : "")" @onclick='() => SwitchTab("conn")'>🌐 الاتصال</button>
@@ -35,6 +37,7 @@
         <button class="tab-btn @(currentTab == "log" ? "active" : "")" @onclick='() => SwitchTab("log")'>📊 السجل</button>
     }
     <button class="tab-btn @(currentTab == "lic" ? "active" : "")" @onclick='() => SwitchTab("lic")'>🔑 التفعيل</button>
+    <button class="tab-btn @(currentTab == "edition" ? "active" : "")" @onclick='() => SwitchTab("edition")'>📦 نوع النسخة</button>
     @if (ShowAdvancedTabs)
     {
         <button class="tab-btn @(currentTab == "update" ? "active" : "")" @onclick='() => SwitchTab("update")'>🔁 التحديثات</button>
@@ -390,12 +393,22 @@ else if (currentTab == "conn")
         <h3>إعدادات الاتصال وقاعدة البيانات</h3>
         <div class="form-group">
             <label>وضع قاعدة البيانات</label>
-            <select @bind="settings[K_DBMode]" class="form-control">
-                <option value="Local">محلي (SQLite) - جهاز واحد</option>
-                <option value="LAN">شبكة محلية (MySQL) - عدة أجهزة</option>
-            </select>
+            @if (CanUseMySQL)
+            {
+                <select @bind="settings[K_DBMode]" class="form-control">
+                    <option value="Local">محلي (SQLite) - جهاز واحد</option>
+                    <option value="LAN">شبكة محلية (MySQL) - عدة أجهزة</option>
+                </select>
+            }
+            else
+            {
+                <div class="locked-hint">
+                    🔒 <strong>الوضع المحلي فقط</strong> في النسخة الأساسية (Mono-poste).
+                    وضع الشبكة المحلية (MySQL) متاح في نسختي Multi-poste وFull — راجِع قسم «نوع النسخة».
+                </div>
+            }
         </div>
-        @if (settings.ContainsKey(K_DBMode) && settings[K_DBMode] == "LAN")
+        @if (CanUseMySQL && settings.ContainsKey(K_DBMode) && settings[K_DBMode] == "LAN")
         {
             <div class="form-group">
                 <label>عنوان خادم MySQL (Host أو IP)</label>
@@ -427,40 +440,53 @@ else if (currentTab == "conn")
             </div>
         }
         <hr />
-        <div class="form-group">
-            <label>تفعيل المزامنة السحابية (Supabase)</label>
-            <select @bind="settings[K_CloudSyncEnabled]" class="form-control">
-                <option value="false">معطلة</option>
-                <option value="true">مفعلة</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Supabase URL</label>
-            <input type="text" @bind="settings[K_SupabaseURL]" />
-        </div>
-        <div class="form-group">
-            <label>Supabase Key (تُعرض مخفية لأمان أكبر)</label>
-            <input type="password" @bind="settings[K_SupabaseKey]" autocomplete="new-password" />
-            <small style="color:#666;">المفتاح محفوظ في قاعدة البيانات المحلية ولا يظهر إلا عند إعادة كتابته.</small>
-        </div>
-
-        <div class="form-group">
-            <label>حالة الاتصال الحالية:</label>
-            <input type="text" value="@appState.ConnectionStatus" readonly class="form-control" style="font-weight: bold; background: #f8f9fa;" />
-        </div>
-
-        <div class="form-group">
-            <label>أدوات المزامنة السحابية:</label>
-            <div class="backup-row">
-                <button class="btn-save" style="background:#17a2b8;" @onclick="SyncNow" disabled="@isSyncing">
-                    ⬆️ @(isSyncing ? "جاري الرفع..." : "رفع كل البيانات إلى Supabase")
-                </button>
-                <button class="btn-save" style="background:#28a745;" @onclick="PullNow" disabled="@isSyncing">
-                    ⬇️ @(isSyncing ? "جاري السحب..." : "سحب كل البيانات من Supabase")
-                </button>
+        @if (CanUseSupabase)
+        {
+            <div class="form-group">
+                <label>تفعيل المزامنة السحابية (Supabase)</label>
+                <select @bind="settings[K_CloudSyncEnabled]" class="form-control">
+                    <option value="false">معطلة</option>
+                    <option value="true">مفعلة</option>
+                </select>
             </div>
-            <small style="color:#666;">السحب يدمج سجلات Supabase في القاعدة المحلية (آخر تعديل يفوز) ويستخدم للاستعادة من نسخة سحابية.</small>
-        </div>
+            <div class="form-group">
+                <label>Supabase URL</label>
+                <input type="text" @bind="settings[K_SupabaseURL]" />
+            </div>
+            <div class="form-group">
+                <label>Supabase Key (تُعرض مخفية لأمان أكبر)</label>
+                <input type="password" @bind="settings[K_SupabaseKey]" autocomplete="new-password" />
+                <small style="color:#666;">المفتاح محفوظ في قاعدة البيانات المحلية ولا يظهر إلا عند إعادة كتابته.</small>
+            </div>
+
+            <div class="form-group">
+                <label>حالة الاتصال الحالية:</label>
+                <input type="text" value="@appState.ConnectionStatus" readonly class="form-control" style="font-weight: bold; background: #f8f9fa;" />
+            </div>
+
+            <div class="form-group">
+                <label>أدوات المزامنة السحابية:</label>
+                <div class="backup-row">
+                    <button class="btn-save" style="background:#17a2b8;" @onclick="SyncNow" disabled="@isSyncing">
+                        ⬆️ @(isSyncing ? "جاري الرفع..." : "رفع كل البيانات إلى Supabase")
+                    </button>
+                    <button class="btn-save" style="background:#28a745;" @onclick="PullNow" disabled="@isSyncing">
+                        ⬇️ @(isSyncing ? "جاري السحب..." : "سحب كل البيانات من Supabase")
+                    </button>
+                </div>
+                <small style="color:#666;">السحب يدمج سجلات Supabase في القاعدة المحلية (آخر تعديل يفوز) ويستخدم للاستعادة من نسخة سحابية.</small>
+            </div>
+        }
+        else
+        {
+            <div class="form-group">
+                <label>المزامنة السحابية (Supabase)</label>
+                <div class="locked-hint">
+                    🔒 المزامنة السحابية (Supabase) متاحة فقط في النسخة الكاملة (Full).
+                    راجِع قسم «نوع النسخة» لتفعيلها.
+                </div>
+            </div>
+        }
 
         <button class="btn-save" @onclick="SaveSettings">حفظ إعدادات الاتصال</button>
     </div>
@@ -604,6 +630,7 @@ else if (currentTab == "lic")
         @if (isLicensed)
         {
             <p style="color: green; font-size: 20px; font-weight: bold;">✅ البرنامج مُفعل</p>
+            <p>نوع النسخة: <strong>@LicenseService.EditionLabel(currentEdition)</strong></p>
             <p>تاريخ انتهاء الترخيص الحالي: <strong>@settings[K_LicenseExpiryDate]</strong></p>
         }
         else
@@ -612,14 +639,14 @@ else if (currentTab == "lic")
         }
 
         <hr />
-        <h4>طريقة 1: تفعيل بكود سري (سنة واحدة)</h4>
-        <p style="font-size: 12px; color: #666;">الكود مرتبط بالساعة الحالية وصالح للاستخدام مرة واحدة فقط (من 00 إلى 59 دقيقة من نفس الساعة). بعد استعماله لا يمكن إعادة استخدامه، ولا تتراكم السنوات.</p>
+        <h4>طريقة 1: تفعيل بكود سري (حرف النسخة + 6 أرقام)</h4>
+        <p style="font-size: 12px; color: #666;">الكود مرتبط بالساعة الحالية وصالح للاستخدام مرة واحدة فقط (من 00 إلى 59 دقيقة من نفس الساعة). بعد استعماله لا يمكن إعادة استخدامه، ولا تتراكم السنوات. حرف النسخة: <strong>M</strong> (أساسية) / <strong>P</strong> (متعددة) / <strong>F</strong> (كاملة).</p>
         <div class="machine-id-box">
             <label>رقم الجهاز (Machine ID):</label>
             <h2 style="color: #007bff; letter-spacing: 2px;">@machineId</h2>
         </div>
         <div class="form-group">
-            <input type="text" @bind="enteredLicenseKey" placeholder="000000" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 5px;" />
+            <input type="text" @bind="enteredLicenseKey" placeholder="F000000" maxlength="7" style="text-align: center; font-size: 24px; letter-spacing: 5px;" />
         </div>
         <button class="btn-save" @onclick="ActivateWithCode">تفعيل بالكود</button>
 
@@ -647,6 +674,56 @@ else if (currentTab == "lic")
         @if (ShowAdvancedTabs)
         {
             <button class="btn-save" style="background: #17a2b8;" @onclick='() => SwitchTab("update")'>🔄 الانتقال لإعدادات التحديثات</button>
+        }
+    </div>
+}
+else if (currentTab == "edition")
+{
+    <div class="settings-card">
+        <h3>📦 نوع النسخة</h3>
+        <p style="color:#666;">النسخة الحالية: <strong style="color:#007bff; font-size:18px;">@LicenseService.EditionLabel(currentEdition)</strong></p>
+        <hr />
+        <div class="form-group">
+            <label>مقارنة النسخ:</label>
+            <table class="edition-table">
+                <thead>
+                    <tr><th></th><th>Mono</th><th>Multi</th><th>Full</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>وضع الشبكة المحلية (MySQL)</td><td>❌</td><td>✅</td><td>✅</td></tr>
+                    <tr><td>المزامنة السحابية (Supabase)</td><td>❌</td><td>❌</td><td>✅</td></tr>
+                    <tr><td>كل مزايا البيع والمخزون والفواتير</td><td>✅</td><td>✅</td><td>✅</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        @if (currentEdition != LicenseService.EditionFull)
+        {
+            <hr />
+            <h4>⬆️ الترقية إلى النسخة الكاملة (Full)</h4>
+            <p style="font-size:12px; color:#666;">أدخل كود الترقية المكوّن من حرف النسخة (<strong>F</strong>) متبوعاً بـ 6 أرقام، ويمكن توليده من أداة التفعيل أو عن طريق التفعيل بالكود في قسم «التفعيل».</p>
+            @if (!showUpgradeBox)
+            {
+                <button class="btn-save" style="background:#17a2b8;" @onclick="ToggleUpgradeBox">🔓 فتح صندوق الترقية</button>
+            }
+            else
+            {
+                <div class="form-group">
+                    <input type="text" @bind="upgradeCode" placeholder="F000000" maxlength="7" style="text-align:center; font-size:20px; letter-spacing:4px;" />
+                </div>
+                <div class="backup-row">
+                    <button class="btn-save" style="background:#28a745;" @onclick="UpgradeWithCode">✅ تأكيد الترقية</button>
+                    <button class="btn-save" style="background:#6c757d;" @onclick="ToggleUpgradeBox">إلغاء</button>
+                </div>
+            }
+        }
+
+        @if (currentEdition != LicenseService.EditionMono && isLicensed)
+        {
+            <hr />
+            <h4>⬇️ الرجوع إلى النسخة الأساسية (Mono)</h4>
+            <p style="font-size:12px; color:#666;">إعادة ضبط نوع النسخة إلى الأساسية. سيتم تعطيل وضع الشبكة والمزامنة السحابية.</p>
+            <button class="btn-save" style="background:#dc3545;" @onclick="DowngradeToMono">الرجوع إلى Mono</button>
         }
     </div>
 }
@@ -723,7 +800,12 @@ else if (currentTab == "update")
                     <div class="audit-line @(issue.StartsWith("✅") ? "ok" : "err")">@issue</div>
                 }
             </div>
-            <button class="btn-cancel" @onclick="CloseAuditModal" style="width:100%">إغلاق</button>
+            <div class="backup-row" style="margin-top:12px;">
+                <button class="btn-save" style="background:#fd7e14;" @onclick="RepairAuditNow" disabled="@auditRepairing">
+                    @(auditRepairing ? "⏳ جارٍ الإصلاح..." : "🔧 إصلاح الأخطاء المكتشفة")
+                </button>
+                <button class="btn-save" style="background:#6c757d;" @onclick="CloseAuditModal">إغلاق</button>
+            </div>
         </div>
     </div>
 }
@@ -773,6 +855,11 @@ else if (currentTab == "update")
     .backup-row { display: flex; gap: 10px; }
     .backup-row .btn-save { flex: 1; }
     .danger-zone { border: 2px dashed #dc3545; border-radius: 8px; padding: 12px; }
+    .locked-hint { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.6; }
+    .edition-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .edition-table th, .edition-table td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: center; font-size: 14px; }
+    .edition-table th { background: #f1f5f9; color: #334155; }
+    .edition-table td:first-child { text-align: right; font-weight: bold; }
     .print-editor-card { max-width: 1100px; }
     .print-hint { color: #666; font-size: 13px; }
     .print-types { display: flex; gap: 10px; margin: 10px 0; }
@@ -797,6 +884,11 @@ else if (currentTab == "update")
 
 @code {
     private string currentTab = "store";
+    private string currentEdition = LicenseService.EditionFull;
+    private string upgradeCode = "";
+    private bool showUpgradeBox = false;
+    private bool CanUseMySQL => currentEdition != LicenseService.EditionMono;
+    private bool CanUseSupabase => currentEdition == LicenseService.EditionFull;
     private Dictionary<string, string> settings = new Dictionary<string, string>();
     private List<ProductTypeModel> productTypes = new List<ProductTypeModel>();
     private string newTypeName = "";
@@ -865,6 +957,7 @@ else if (currentTab == "update")
     private bool isAuditing = false;
     private FinancialAuditResult? auditResult = null;
     private bool showAuditModal = false;
+    private bool auditRepairing = false;
     private bool isTransferring = false;
 
     private async Task TransferToMySql()
@@ -1132,6 +1225,7 @@ else if (currentTab == "update")
         await LoadSettings();
         await LoadProductTypes();
         CheckLicenseStatus();
+        currentEdition = licenseService.GetEdition();
         machineId = authService.GetMachineId();
         hasCustomActivationSecret = authService.HasCustomActivationSecret(dbService);
         usbStoreName = settings.ContainsKey(K_StoreName) ? settings[K_StoreName] : "";
@@ -1200,8 +1294,8 @@ else if (currentTab == "update")
 
     private void SwitchTab(string tab)
     {
-        // حماية: الأقسام المتقدمة مقفلة قبل التفعيل
-        if (!ShowAdvancedTabs && tab != "store" && tab != "lic")
+        // حماية: الأقسام المتقدمة مقفلة قبل التفعيل (الأنواع ونوع النسخة متاحة دائماً)
+        if (!ShowAdvancedTabs && tab != "store" && tab != "lic" && tab != "types" && tab != "edition")
         {
             toastService.ShowWarning("هذه الإعدادات تتطلب تفعيل البرنامج. يُرجى التفعيل أولاً من قسم «التمكين».", "🔒 البرنامج غير مفعل");
             return;
@@ -1597,12 +1691,13 @@ else if (currentTab == "update")
 
     private async Task ActivateWithCode()
     {
-        var (success, error, newExp) = authService.TryActivateWithCode(dbService, enteredLicenseKey);
+        var (success, error, newExp, edition) = authService.TryActivateWithCode(dbService, enteredLicenseKey);
         if (success && newExp != null)
         {
             settings[K_LicenseExpiryDate] = newExp.Value.ToString("yyyy-MM-dd HH:mm:ss");
             isLicensed = true;
-            toastService.ShowSuccess("تم تفعيل البرنامج بنجاح (الكود صالح للاستخدام مرة واحدة فقط)", "✅ تفعيل ناجح");
+            currentEdition = licenseService.GetEdition();
+            toastService.ShowSuccess($"تم تفعيل البرنامج بنجاح (نسخة {LicenseService.EditionLabel(edition)})", "✅ تفعيل ناجح");
         }
         else
         {
@@ -1610,6 +1705,43 @@ else if (currentTab == "update")
         }
 
         await Task.CompletedTask;
+    }
+
+    private void ToggleUpgradeBox() => showUpgradeBox = !showUpgradeBox;
+
+    private async Task UpgradeWithCode()
+    {
+        if (string.IsNullOrWhiteSpace(upgradeCode))
+        {
+            toastService.ShowWarning("الرجاء إدخال كود الترقية أولاً", "📦 نوع النسخة");
+            return;
+        }
+        var (success, error, newExp, edition) = authService.TryActivateWithCode(dbService, upgradeCode);
+        if (success && newExp != null)
+        {
+            settings[K_LicenseExpiryDate] = newExp.Value.ToString("yyyy-MM-dd HH:mm:ss");
+            isLicensed = true;
+            currentEdition = licenseService.GetEdition();
+            showUpgradeBox = false;
+            upgradeCode = "";
+            toastService.ShowSuccess($"تمت الترقية إلى {LicenseService.EditionLabel(edition)}", "📦 نوع النسخة");
+        }
+        else
+        {
+            toastService.ShowError(error ?? "كود الترقية غير صحيح", "❌ الترقية");
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task DowngradeToMono()
+    {
+        if (currentEdition == LicenseService.EditionMono) return;
+        bool confirm = await JS.InvokeAsync<bool>("confirm",
+            "الرجوع إلى النسخة الأساسية (Mono) سيعطّل وضع الشبكة (MySQL) والمزامنة السحابية حتى إعادة الترقية. هل تريد المتابعة؟");
+        if (!confirm) return;
+        licenseService.SetEdition(LicenseService.EditionMono);
+        currentEdition = LicenseService.EditionMono;
+        toastService.ShowSuccess("تم الرجوع إلى النسخة الأساسية (Mono-poste)", "📦 نوع النسخة");
     }
 
     private async Task SaveActivationSecret()
@@ -1852,7 +1984,7 @@ else if (currentTab == "update")
         isAuditing = true;
         try
         {
-            auditResult = await dbService.AuditFinancialAccuracyAsync();
+            auditResult = await auditService.RunFullAuditAsync();
             showAuditModal = true;
         }
         catch (Exception ex)
@@ -1862,6 +1994,28 @@ else if (currentTab == "update")
         finally
         {
             isAuditing = false;
+        }
+    }
+
+    private async Task RepairAuditNow()
+    {
+        if (auditResult == null) return;
+        auditRepairing = true;
+        try
+        {
+            int fixedCount = await auditService.FixInvoiceTotalsAsync();
+            auditResult = await auditService.RunFullAuditAsync();
+            toastService.ShowSuccess(
+                fixedCount > 0 ? $"تم إصلاح إجمالي {fixedCount} فاتورة. أعد الفحص للتأكد." : "تمت مراجعة الحسابات دون الحاجة إلى إصلاح.",
+                "🔧 إصلاح التدقيق");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الإصلاح: " + ex.Message, "❌ إصلاح التدقيق");
+        }
+        finally
+        {
+            auditRepairing = false;
         }
     }
 

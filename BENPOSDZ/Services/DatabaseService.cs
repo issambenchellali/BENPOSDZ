@@ -281,14 +281,65 @@ namespace BENPOSDZ.Services
             ");
 
             // ترحيل القواعد القديمة: إضافة الأعمدة الجديدة إن لم تكن موجودة
-            EnsureColumn(connection, "Orders", "Parent_Order_Id", "Parent_Order_Id VARCHAR(36)");
-            EnsureColumn(connection, "Products", "Pro_ImageUrl", "Pro_ImageUrl TEXT");
+            EnsureColumnExists(connection, "Orders", "Parent_Order_Id", "Parent_Order_Id VARCHAR(36)");
+            EnsureColumnExists(connection, "Products", "Pro_ImageUrl", "Pro_ImageUrl TEXT");
+
+            // أعمدة الحذف الناعم والمزامنة الناقصة في القواعد القديمة (كانت تُضاف في إصدارات أحدث)
+            EnsureColumnExists(connection, "Users", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Users", "IsSynced", "IsSynced INT DEFAULT 0");
+            EnsureColumnExists(connection, "Users", "User_Type", "User_Type INT DEFAULT 0");
+            EnsureColumnExists(connection, "Users", "User_FullName", "User_FullName VARCHAR(100)");
+            EnsureColumnExists(connection, "Persons", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Persons", "IsSynced", "IsSynced INT DEFAULT 0");
+            EnsureColumnExists(connection, "Orders", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Orders", "IsSynced", "IsSynced INT DEFAULT 0");
+            EnsureColumnExists(connection, "Orders", "Unpaid", "Unpaid DECIMAL(18,2)");
+            EnsureColumnExists(connection, "Order_Details", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Order_Details", "IsSynced", "IsSynced INT DEFAULT 0");
+            EnsureColumnExists(connection, "Expenses", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Expenses", "IsSynced", "IsSynced INT DEFAULT 0");
+            EnsureColumnExists(connection, "Historique", "IsDeleted", "IsDeleted INT DEFAULT 0");
+            EnsureColumnExists(connection, "Historique", "IsSynced", "IsSynced INT DEFAULT 0");
+
+            // جدول Product_Types مفقود في بعض القواعد القديمة — أنشئه إن لم يكن موجوداً
+            connection.Execute("CREATE TABLE IF NOT EXISTS Product_Types (Id VARCHAR(36) PRIMARY KEY, Type_Name VARCHAR(100), UpdatedAt VARCHAR(30), IsSynced INT DEFAULT 0, IsDeleted INT DEFAULT 0);");
+
+            // القواعد القديمة جداً استعملت Order_ID كاسم لمفتاح الفواتير بدل Id — صحّح ذلك
+            EnsureOrdersIdColumn(connection);
         }
 
-        private void EnsureColumn(IDbConnection connection, string table, string column, string definition)
+        // إصلاح مفتاح جدول Orders في القواعد القديمة: إن لم يوجد عمود Id وكان يوجد Order_ID فحوّله
+        private void EnsureOrdersIdColumn(IDbConnection connection)
         {
             try
             {
+                var cols = connection.Query<string>("SELECT name FROM pragma_table_info('Orders')").ToList();
+                bool hasId = cols.Any(c => string.Equals(c, "Id", StringComparison.OrdinalIgnoreCase));
+                if (hasId) return;
+
+                if (cols.Any(c => string.Equals(c, "Order_ID", StringComparison.OrdinalIgnoreCase)))
+                {
+                    connection.Execute("ALTER TABLE Orders RENAME COLUMN Order_ID TO Id");
+                    LogEvent("🔧 تمت إصلاح القاعدة القديمة: تحويل عمود Order_ID إلى Id في جدول Orders.");
+                }
+                else
+                {
+                    connection.Execute("ALTER TABLE Orders ADD COLUMN Id VARCHAR(36)");
+                    LogEvent("🔧 تمت إضافة عمود Id إلى جدول Orders (قاعدة قديمة).");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogEvent("⚠️ تعذر إصلاح عمود Id في جدول Orders: " + ex.Message);
+            }
+        }
+
+        private void EnsureColumnExists(IDbConnection connection, string table, string column, string definition)
+        {
+            try
+            {
+                var cols = connection.Query<string>($"SELECT name FROM pragma_table_info('{table}')").ToList();
+                if (cols.Any(c => string.Equals(c, column, StringComparison.OrdinalIgnoreCase))) return;
                 connection.Execute($"ALTER TABLE {table} ADD COLUMN {definition}");
                 LogEvent($"تمت إضافة العمود {column} إلى جدول {table}.");
             }
@@ -327,61 +378,11 @@ namespace BENPOSDZ.Services
             return found;
         }
 
-        // فحص دقة الحسابات المالية: مطابقة تفاصيل الفواتير مع الإجماليات والمدفوعات والديون
+        // فحص دقة الحسابات المالية أصبح في AuditService (RunFullAuditAsync / FixInvoiceTotalsAsync)
+        // للتوافق مع النداءات القديمة نُبقي مؤشراً يعيد التوجيه
         public async Task<FinancialAuditResult> AuditFinancialAccuracyAsync()
         {
-            var result = new FinancialAuditResult();
-            try
-            {
-                using var connection = CreateConnection();
-
-                // 1. مجموع التفاصيل يجب أن يساوي سعر الفاتورة
-                var mismatched = await connection.QueryAsync<dynamic>(@"
-                    SELECT o.Id, o.Price AS OrderPrice, COALESCE(SUM(od.Pro_Qty * od.Pro_Price), 0) AS DetailsTotal
-                    FROM Orders o LEFT JOIN Order_Details od ON od.Order_ID = o.Id AND od.IsDeleted = 0
-                    WHERE o.IsDeleted = 0
-                    GROUP BY o.Id, o.Price
-                    HAVING ABS(COALESCE(SUM(od.Pro_Qty * od.Pro_Price), 0) - o.Price) > 0.01");
-                foreach (var m in mismatched)
-                {
-                    result.Issues.Add($"⚠️ الفاتورة {((string)m.Id).Substring(0, 8)}... سعرها {(decimal)m.OrderPrice} لكن مجموع تفاصيلها {(decimal)m.DetailsTotal}");
-                    result.TotalIssues++;
-                }
-
-                // 2. Paid + Unpaid يجب أن يساوي Price
-                var debtMismatch = await connection.QueryAsync<dynamic>(@"
-                    SELECT Id, Price, Paid, Unpaid FROM Orders
-                    WHERE IsDeleted = 0 AND ABS((COALESCE(Paid, 0) + COALESCE(Unpaid, 0)) - Price) > 0.01");
-                foreach (var m in debtMismatch)
-                {
-                    result.Issues.Add($"⚠️ الفاتورة {((string)m.Id).Substring(0, 8)}... المدفوع+الدين ({(decimal)m.Paid}+{(decimal)m.Unpaid}) لا يساوي السعر {(decimal)m.Price}");
-                    result.TotalIssues++;
-                }
-
-                // 3. فواتير بدون تفاصيل
-                int noDetails = await connection.ExecuteScalarAsync<int>(@"
-                    SELECT COUNT(*) FROM Orders o WHERE o.IsDeleted = 0
-                    AND NOT EXISTS (SELECT 1 FROM Order_Details od WHERE od.Order_ID = o.Id AND od.IsDeleted = 0)");
-                if (noDetails > 0)
-                {
-                    result.Issues.Add($"⚠️ توجد {noDetails} فاتورة بدون أي تفاصيل.");
-                    result.TotalIssues += noDetails;
-                }
-
-                result.SalesTotal = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Price),0) FROM Orders WHERE Order_Type IN (0,1) AND IsDeleted = 0");
-                result.PurchaseTotal = await connection.ExecuteScalarAsync<decimal>("SELECT COALESCE(SUM(Price),0) FROM Orders WHERE Order_Type = 2 AND IsDeleted = 0");
-                result.InvoicesChecked = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Orders WHERE IsDeleted = 0");
-
-                if (result.TotalIssues == 0)
-                    result.Issues.Add("✅ كل الحسابات المالية دقيقة، لا توجد أي مشاكل.");
-            }
-            catch (Exception ex)
-            {
-                result.Issues.Add("❌ فشل التدقيق: " + ex.Message);
-                result.TotalIssues++;
-                LogEvent($"❌ فشل التدقيق المالي: {ex.Message}");
-            }
-            return result;
+            return await new AuditService(this).RunFullAuditAsync();
         }
 
         // نسخة احتياطية من قاعدة البيانات المحلية (عبر SQLite Backup API — يعمل حتى أثناء تشغيل القاعدة)
