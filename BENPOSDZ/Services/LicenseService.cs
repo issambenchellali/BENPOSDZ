@@ -39,7 +39,7 @@ namespace BENPOSDZ.Services
         };
 
         private const string DailyCodeSalt = "BENPOS_DZ_DAILY_2024_DEV_KEY";
-        private const string DefaultActivationSecret = "BENPOS_DZ_ACTIVATION_KEY";
+        private const string DefaultActivationSecret = "BENPOS_DZ_2024_SECRET_KEY";
 
         private readonly DatabaseService _db;
 

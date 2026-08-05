@@ -23,4 +23,4 @@ release/
 *.log
 
 # أدوات التفعيل الداخلية — خاصة، لا تُرفع أبداً
-internal-tools/
+Activation_BLAZOR/

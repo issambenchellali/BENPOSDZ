@@ -12,7 +12,7 @@ namespace BENPOSDZ.Services
         private const string FormatPrefix = "PBKDF2$";
 
         // يُستخدم فقط للتحقق من كلمات المرور القديمة (قبل الترقية)
-        private const string LegacySalt = "BENPOS_DZ_LEGACY_SALT";
+        private const string LegacySalt = "BENPOS_DZ_2024_SECRET_SALT";
 
         // تشفير كلمة المرور بتقنية PBKDF2 مع Salt عشوائي فريد لكل مستخدم
         public string HashPassword(string password)

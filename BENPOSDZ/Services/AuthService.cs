@@ -89,7 +89,7 @@ namespace BENPOSDZ.Services
         }
 
         // سر التفعيل الافتراضي (يُحفظ في AppSettings حتى لا يُخزّن في الكود المصدري)
-        private const string DefaultActivationSecret = "BENPOS_DZ_ACTIVATION_KEY";
+        private const string DefaultActivationSecret = "BENPOS_DZ_2024_SECRET_KEY";
 
         // قراءة سر التفعيل من الإعدادات المحلية (قابل للتغيير لكل تثبيت)
         public string GetActivationSecret(DatabaseService dbService)
