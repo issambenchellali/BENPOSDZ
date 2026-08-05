@@ -25,7 +25,7 @@
     </div>
     <ul class="nav-links">
         <li><NavLink href="/pos" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🛒 نقطة البيع</NavLink></li>
-        @if (authService.IsLicensed)
+        @if (ShowInvoices)
         {
             <li><NavLink href="/invoices" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🧾 الفواتير</NavLink></li>
         }
@@ -38,7 +38,7 @@
         {
             <li><NavLink href="/purchases" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">🚚 المشتريات</NavLink></li>
         }
-        @if (authService.IsLicensed)
+        @if (ShowFinance)
         {
             <li><NavLink href="/finance" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">💰 الإدارة المالية ولوحة التحكم</NavLink></li>
         }
@@ -46,7 +46,7 @@
         {
             <li><NavLink href="/settings" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">⚙️ الإعدادات</NavLink></li>
         }
-        @if (authService.IsAdmin && authService.IsLicensed)
+        @if (ShowUsers)
         {
             <li><NavLink href="/users" Match="NavLinkMatch.Prefix" @onclick="CloseDrawer">👥 المستخدمون</NavLink></li>
         }
@@ -59,6 +59,43 @@
     [Parameter] public EventCallback OnSync { get; set; }
     [Parameter] public EventCallback OnLogout { get; set; }
     [Parameter] public int PendingSyncCount { get; set; }
+
+    // على أندرويد تظهر أزرار الإدارة (الفواتير، المالية، المستخدمون) دائماً حتى في النسخة التجريبية
+    private bool ShowInvoices
+    {
+        get
+        {
+#if ANDROID
+            return true;
+#else
+            return authService.IsLicensed;
+#endif
+        }
+    }
+
+    private bool ShowFinance
+    {
+        get
+        {
+#if ANDROID
+            return true;
+#else
+            return authService.IsLicensed;
+#endif
+        }
+    }
+
+    private bool ShowUsers
+    {
+        get
+        {
+#if ANDROID
+            return authService.IsAdmin;
+#else
+            return authService.IsAdmin && authService.IsLicensed;
+#endif
+        }
+    }
 
     private async Task CloseDrawer() => await OnClose.InvokeAsync();
 }
