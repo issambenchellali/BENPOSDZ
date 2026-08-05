@@ -368,13 +368,22 @@
     .fin-del { background: none; border: none; cursor: pointer; color: #dc3545; font-size: 16px; }
 
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
-    .modal-box { background: white; padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; text-align: center; }
+    .modal-box { background: white; padding: 25px; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; text-align: center; max-width: 92vw; max-height: 88vh; overflow-y: auto; }
     .form-group { text-align: right; margin-bottom: 10px; }
     .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
     .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
     .modal-actions { display: flex; justify-content: space-between; margin-top: 20px; }
     .btn-save { background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
     .btn-cancel { background: #6c757d; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 45%; }
+
+    @@media (max-width: 768px) {
+        .fin-cards { flex-direction: column; }
+        .fin-card { width: 100%; }
+        .fin-actions { width: 100%; }
+        .fin-actions .fin-btn { flex: 1; }
+        .period-tabs { overflow-x: auto; }
+        .fin-card-btn { min-height: 48px; min-width: 48px; }
+    }
 </style>
 
 @code {
