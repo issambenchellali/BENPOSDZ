@@ -74,8 +74,8 @@
 					@if (authService.IsAdmin)
 					{
 						<button class="btn-edit" @onclick="() => EditProduct(product)">تعديل</button>
+						<button class="btn-delete" @onclick="() => DeleteProduct(product.Id)">حذف</button>
 					}
-                    <button class="btn-delete" @onclick="() => DeleteProduct(product.Id)">حذف</button>
                 </td>
             </tr>
         }
@@ -451,6 +451,13 @@
 
     private async Task DeleteProduct(string id)
     {
+        // حماية: الحذف مخصص للمدير فقط (البائع لا يملك أزرار الحذف ولا هذا الكود)
+        if (!authService.IsAdmin)
+        {
+            toastService.ShowWarning("حذف المنتجات متاح للمدير فقط.", "🔒 حذف المنتج");
+            return;
+        }
+
         bool confirmed = await JS.InvokeAsync<bool>("confirm", "هل أنت متأكد من حذف هذا المنتج؟");
         if (!confirmed) return;
 
