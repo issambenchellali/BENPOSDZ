@@ -105,6 +105,20 @@
         <div class="login-header">
             <h1>BENPOS</h1>
             <p>نظام إدارة المبيعات</p>
+            <div class="login-license-status @(authService.IsLicensed ? "ok" : "no")">
+                @if (authService.IsLicensed)
+                {
+                    <span>🟢 البرنامج مفعل</span>
+                }
+                else if (authService.IsTrialExpired)
+                {
+                    <span>🔴 انتهت النسخة التجريبية — يجب تفعيل البرنامج</span>
+                }
+                else
+                {
+                    <span>🟡 النسخة التجريبية (15 يوماً)</span>
+                }
+            </div>
         </div>
 
         @if (showForceChange)
@@ -204,6 +218,10 @@
     .login-header { padding: 24px 30px 16px; }
     .login-header h1 { color: #007bff; margin: 0 0 5px; }
     .login-header p { color: #666; margin: 0 0 10px; }
+
+    .login-license-status { margin-top: 6px; font-size: 13px; font-weight: bold; padding: 6px 10px; border-radius: 8px; }
+    .login-license-status.ok { color: #15803d; background: #dcfce7; }
+    .login-license-status.no { color: #b91c1c; background: #fee2e2; }
 
     .login-body { display: flex; text-align: right; border-top: 1px solid #eef1f4; }
 
@@ -467,6 +485,9 @@
 
     protected override void OnInitialized()
     {
+        // قراءة حالة التفعيل لعرضها أعلى الشاشة
+        try { authService.CheckLicense(dbService); } catch { }
+
         // قراءة آخر وضع اتصال محفوظ
         using var connection = dbService.CreateLocalConnection();
         dbMode = connection.QueryFirstOrDefault<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'DBMode'") ?? "Local";

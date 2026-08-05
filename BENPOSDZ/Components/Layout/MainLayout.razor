@@ -216,9 +216,41 @@ else
         }
     }
 
+    // الصفحات التي تتطلب تفعيل البرنامج (تُحجَب مع رسالة Toast إذا لم يكن مفعّلاً)
+    private static readonly HashSet<string> LicensedOnlyPaths = new()
+    {
+        "/invoices", "/finance", "/dashboard", "/users", "/purchases"
+    };
+
+    private bool _lockWarningShown = false;
+
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         UpdatePageTitle(e.Location);
+
+        try
+        {
+            string path = new Uri(e.Location).AbsolutePath;
+            if (authService.IsLoggedIn && !authService.IsLicensed && LicensedOnlyPaths.Contains(path))
+            {
+                // منع فتح الصفحة + إظهار Toast — منع التكرار أثناء إعادة التوجيه
+                if (!_lockWarningShown)
+                {
+                    _lockWarningShown = true;
+                    toastService.ShowWarning("هذه الميزة تتطلب تفعيل البرنامج. يرجى التفعيل من الإعدادات ▸ التفعيل.", "🔒 البرنامج غير مفعل");
+                }
+                Navigation.NavigateTo("/pos");
+            }
+            else
+            {
+                _lockWarningShown = false;
+            }
+        }
+        catch
+        {
+            _lockWarningShown = false;
+        }
+
         InvokeAsync(StateHasChanged);
     }
 

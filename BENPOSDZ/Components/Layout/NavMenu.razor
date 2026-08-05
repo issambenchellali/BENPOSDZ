@@ -8,6 +8,14 @@
         <h2>BENPOS</h2>
         <div class="user-info">
             <span>👤 @authService.CurrentUser?.User_FullName</span>
+            @if (authService.IsLicensed)
+            {
+                <small class="connection-badge" style="color: #10b981;">🟢 البرنامج مفعل</small>
+            }
+            else
+            {
+                <small class="connection-badge" style="color: #ef4444;">🔴 غير مفعل — النسخة التجريبية</small>
+            }
             <small class="connection-badge" style="color:@(appState.ConnectionStatus.Contains("🟢") ? "#10b981" : "#ef4444");">
                 @appState.ConnectionStatus
             </small>
