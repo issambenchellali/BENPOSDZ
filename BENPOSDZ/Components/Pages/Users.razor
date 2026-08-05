@@ -8,7 +8,7 @@
 <h2>إدارة المستخدمين</h2>
 <button class="btn-add" @onclick="OpenAddModal">+ إضافة مستخدم</button>
 
-<table class="products-table">
+<table class="products-table responsive-table">
     <thead>
         <tr>
             <th>الاسم الكامل</th>
@@ -21,10 +21,10 @@
         @foreach (var u in usersList)
         {
             <tr>
-                <td>@u.User_FullName</td>
-                <td>@u.User_Name</td>
-                <td>@(u.User_Type == 1 ? "مدير" : "بائع")</td>
-                <td>
+                <td data-label="الاسم الكامل">@u.User_FullName</td>
+                <td data-label="اسم المستخدم">@u.User_Name</td>
+                <td data-label="الصلاحية">@(u.User_Type == 1 ? "مدير" : "بائع")</td>
+                <td data-label="إجراءات">
                     <button class="btn-edit" @onclick="() => EditUser(u)">تعديل</button>
                     @if (u.User_Name != "admin") // منع حذف الأدمن الأساسي
                     {

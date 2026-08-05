@@ -38,7 +38,7 @@
         </div>
         @if (activeSec.Items.Any())
         {
-            <table class="invoices-table">
+            <table class="invoices-table responsive-table">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -53,12 +53,12 @@
                     @foreach (var inv in activeSec.Items)
                     {
                         <tr>
-                            <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
-                            <td>@inv.Person_Name</td>
-                            <td>@inv.Price د.ج</td>
-                            <td>@inv.Paid د.ج</td>
-                            <td class="@(inv.Order_Type <= 2 && inv.Unpaid > 0 ? "debt-color" : "")">@((inv.Order_Type <= 2 ? inv.Unpaid : 0).ToString("0.00")) د.ج</td>
-                            <td>
+                            <td data-label="التاريخ">@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td data-label="الزبون">@inv.Person_Name</td>
+                            <td data-label="المجموع">@inv.Price د.ج</td>
+                            <td data-label="المدفوع">@inv.Paid د.ج</td>
+                            <td data-label="الدين" class="@(inv.Order_Type <= 2 && inv.Unpaid > 0 ? "debt-color" : "")">@((inv.Order_Type <= 2 ? inv.Unpaid : 0).ToString("0.00")) د.ج</td>
+                            <td data-label="إجراءات">
                                 <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "receipt")'>🧾 وصل</button>
                                 <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "invoice")'>📄 فاتورة</button>
                                 <button class="btn-print" @onclick='() => PrintInvoice(inv.Id, "delivery")'>🚚 BL</button>
@@ -86,12 +86,12 @@
     <div class="modal-overlay">
         <div class="modal-box">
             <h3>تفاصيل الفاتورة</h3>
-            <table class="details-table">
+            <table class="details-table responsive-table">
                 <thead><tr><th>السلعة</th><th>الكمية</th><th>السعر</th><th>المجموع</th></tr></thead>
                 <tbody>
                     @foreach(var det in invoiceDetails)
                     {
-                        <tr><td>@det.Pro_Name</td><td>@det.Pro_Qty</td><td>@det.Pro_Price</td><td>@((det.Pro_Qty * det.Pro_Price).ToString("0.00"))</td></tr>
+                        <tr><td data-label="السلعة">@det.Pro_Name</td><td data-label="الكمية">@det.Pro_Qty</td><td data-label="السعر">@det.Pro_Price</td><td data-label="المجموع">@((det.Pro_Qty * det.Pro_Price).ToString("0.00"))</td></tr>
                     }
                 </tbody>
             </table>
@@ -105,15 +105,15 @@
     <div class="modal-overlay">
         <div class="modal-box">
             <h3>استرجاع سلع من الفاتورة</h3>
-            <table class="details-table">
+            <table class="details-table responsive-table">
                 <thead><tr><th>السلعة</th><th>الكمية الأصلية</th><th>كمية الإرجاع</th></tr></thead>
                 <tbody>
                     @foreach(var det in invoiceDetails)
                     {
                         <tr>
-                            <td>@det.Pro_Name</td>
-                            <td>@det.Pro_Qty</td>
-                            <td><input type="number" min="0" max="@det.Pro_Qty" @bind="det.ReturnQty" style="width: 70px;" /></td>
+                            <td data-label="السلعة">@det.Pro_Name</td>
+                            <td data-label="الكمية الأصلية">@det.Pro_Qty</td>
+                            <td data-label="كمية الإرجاع"><input type="number" min="0" max="@det.Pro_Qty" @bind="det.ReturnQty" style="width: 70px;" /></td>
                         </tr>
                     }
                 </tbody>

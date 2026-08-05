@@ -19,7 +19,7 @@
 
 @if (invoiceDetails.Any())
 {
-    <table class="returns-table">
+    <table class="returns-table responsive-table">
         <thead>
             <tr>
                 <th>السلعة</th>
@@ -33,13 +33,13 @@
             @foreach (var item in invoiceDetails)
             {
                 <tr>
-                    <td>@item.Pro_Name</td>
-                    <td>@item.Pro_Qty</td>
-                    <td>@item.Pro_Price د.ج</td>
-                    <td>
+                    <td data-label="السلعة">@item.Pro_Name</td>
+                    <td data-label="الكمية المشتراة">@item.Pro_Qty</td>
+                    <td data-label="سعر الوحدة">@item.Pro_Price د.ج</td>
+                    <td data-label="الكمية المرتجعة">
                         <input type="number" min="0" max="@item.Pro_Qty" @bind="item.ReturnQty" style="width: 80px; text-align: center;" />
                     </td>
-                    <td>@((item.ReturnQty * item.Pro_Price).ToString("0.00")) د.ج</td>
+                    <td data-label="المبلغ المسترجع">@((item.ReturnQty * item.Pro_Price).ToString("0.00")) د.ج</td>
                 </tr>
             }
         </tbody>

@@ -99,7 +99,6 @@ h1:focus {
     .tab-btn { white-space: nowrap; }
     .print-editor-grid { flex-direction: column !important; }
     .host-row, .backup-row { flex-direction: column !important; }
-    table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
     .machine-id-box h2 { font-size: 18px !important; }
     h2 { font-size: 20px; }
     .modal-overlay { align-items: flex-end !important; padding: 0 !important; overflow-y: auto !important; }
@@ -108,5 +107,57 @@ h1:focus {
     .modal-box button { min-height: 48px !important; }
     .modal-actions { flex-wrap: wrap !important; }
     .modal-actions button { flex: 1 1 45% !important; }
+
+    /* ===== جداول متجاوبة على الجوال: تحويل كل صف إلى بطاقة =====
+       يتطلب إضافة class="responsive-table" للجدول و data-label لكل <td> */
+    table.responsive-table {
+        display: block;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100%;
+        border: none;
+        border-collapse: separate;
+        white-space: normal;
+        overflow: visible;
+    }
+    table.responsive-table > thead { display: none !important; }
+    table.responsive-table > tbody { display: block; }
+    table.responsive-table > tbody > tr {
+        display: block;
+        margin: 0 0 10px 0;
+        padding: 2px 0;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    table.responsive-table td {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 4px 12px;
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 44px;
+        padding: 9px 12px;
+        border: none;
+        border-bottom: 1px dashed #ececec;
+        text-align: right;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+    table.responsive-table td:last-child { border-bottom: none; }
+    table.responsive-table td::before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: #555;
+        font-size: 13px;
+        flex-shrink: 0;
+    }
+    table.responsive-table td[data-label=""]::before,
+    table.responsive-table td:not([data-label])::before { content: none; }
+    table.responsive-table td[data-label=""],
+    table.responsive-table td:not([data-label]) { display: block; text-align: center; }
 }
 

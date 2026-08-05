@@ -25,7 +25,7 @@
     <button class="btn-print-debts" @onclick="PrintDebts">🖨️ طباعة قائمة الديون</button>
 </div>
 
-<table class="persons-table">
+<table class="persons-table responsive-table">
     <thead>
         <tr>
             <th>الاسم</th>
@@ -38,10 +38,10 @@
         @foreach (var p in personsList)
         {
             <tr>
-                <td>@p.Person_Name</td>
-                <td>@p.Person_Phone</td>
-                <td class="@(p.Person_Debt > 0 ? "debt-color" : "no-debt")">@p.Person_Debt.ToString("0.00") د.ج</td>
-                <td>
+                <td data-label="الاسم">@p.Person_Name</td>
+                <td data-label="الهاتف">@p.Person_Phone</td>
+                <td data-label="الدين المتراكم" class="@(p.Person_Debt > 0 ? "debt-color" : "no-debt")">@p.Person_Debt.ToString("0.00") د.ج</td>
+                <td data-label="إجراءات">
                     <button class="btn-history" @onclick="() => ViewHistory(p.Id, p.Person_Name)">📜 السجل</button>
                     @if (p.Person_Debt > 0)
                     {
@@ -73,7 +73,7 @@
                 </div>
             </div>
             <div class="history-wrap">
-                <table class="history-table">
+                <table class="history-table responsive-table">
                     <thead>
                         <tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th><th>دفع مبلغ</th><th>طباعة</th></tr>
                     </thead>
@@ -81,18 +81,18 @@
                         @foreach (var inv in FilteredInvoices)
                         {
                             <tr>
-                                <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
-                                <td>@GetTypeName(inv.Order_Type)</td>
-                                <td>@inv.Price.ToString("0.00") د.ج</td>
-                                <td>@inv.Paid.ToString("0.00") د.ج</td>
-                                <td class="@(inv.Unpaid > 0 ? "debt-color" : "")">@inv.Unpaid.ToString("0.00") د.ج</td>
-                                <td>
+                                <td data-label="التاريخ">@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td data-label="النوع">@GetTypeName(inv.Order_Type)</td>
+                                <td data-label="المبلغ">@inv.Price.ToString("0.00") د.ج</td>
+                                <td data-label="المدفوع">@inv.Paid.ToString("0.00") د.ج</td>
+                                <td data-label="الدين" class="@(inv.Unpaid > 0 ? "debt-color" : "")">@inv.Unpaid.ToString("0.00") د.ج</td>
+                                <td data-label="دفع مبلغ">
                                     @if (inv.Unpaid > 0)
                                     {
                                         <button class="btn-partial" @onclick="() => OpenPartialPay(inv)">💰 دفع مبلغ</button>
                                     }
                                 </td>
-                                <td><button class="btn-print-sm" @onclick="() => PrintInvoice(inv.Id)">🖨️</button></td>
+                                <td data-label="طباعة"><button class="btn-print-sm" @onclick="() => PrintInvoice(inv.Id)">🖨️</button></td>
                             </tr>
                         }
                         @if (!FilteredInvoices.Any())

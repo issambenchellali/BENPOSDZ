@@ -79,7 +79,7 @@ else if (currentTab == "types")
             <input type="text" @bind="newTypeName" placeholder="اسم النوع الجديد (مثال: مشروبات)" />
             <button class="btn-save" style="width: 200px;" @onclick="AddType">إضافة</button>
         </div>
-        <table class="mini-table">
+        <table class="mini-table responsive-table">
             <thead>
                 <tr>
                     <th style="width: 40px;"></th>
@@ -92,10 +92,10 @@ else if (currentTab == "types")
                 @foreach (var t in productTypes)
                 {
                     <tr>
-                        <td><button class="type-expand-btn" @onclick="() => ToggleType(t.Id)" title="عرض منتجات هذا النوع">@(expandedTypeId == t.Id ? "▼" : "▶")</button></td>
-                        <td>@t.Type_Name</td>
-                        <td class="type-count-badge">@GetTypeProductCount(t.Id)</td>
-                        <td><button class="btn-delete" @onclick="() => DeleteType(t.Id)">🗑️</button></td>
+                        <td data-label=""><button class="type-expand-btn" @onclick="() => ToggleType(t.Id)" title="عرض منتجات هذا النوع">@(expandedTypeId == t.Id ? "▼" : "▶")</button></td>
+                        <td data-label="النوع">@t.Type_Name</td>
+                        <td data-label="المنتجات" class="type-count-badge">@GetTypeProductCount(t.Id)</td>
+                        <td data-label="حذف"><button class="btn-delete" @onclick="() => DeleteType(t.Id)">🗑️</button></td>
                     </tr>
                     @if (expandedTypeId == t.Id)
                     {
@@ -112,7 +112,7 @@ else if (currentTab == "types")
                                     }
                                     else
                                     {
-                                        <table class="mini-table">
+                                        <table class="mini-table responsive-table">
                                             <thead>
                                                 <tr>
                                                     <th>الاسم</th>
@@ -127,12 +127,12 @@ else if (currentTab == "types")
                                                 @foreach (var p in typeProducts)
                                                 {
                                                     <tr>
-                                                        <td>@p.Pro_Name</td>
-                                                        <td>@p.Pro_Mark</td>
-                                                        <td class="@(p.Pro_Qty <= p.Pro_QtyMin && p.Pro_QtyMin > 0 ? "low-stock" : "")">@p.Pro_Qty @p.Pro_Unit</td>
-                                                        <td>@p.Pro_SalePriceG د.ج</td>
-                                                        <td>@p.Pro_SalePrice_Max د.ج</td>
-                                                        <td style="white-space: nowrap;">
+                                                        <td data-label="الاسم">@p.Pro_Name</td>
+                                                        <td data-label="العلامة">@p.Pro_Mark</td>
+                                                        <td data-label="الكمية" class="@(p.Pro_Qty <= p.Pro_QtyMin && p.Pro_QtyMin > 0 ? "low-stock" : "")">@p.Pro_Qty @p.Pro_Unit</td>
+                                                        <td data-label="سعر الجملة">@p.Pro_SalePriceG د.ج</td>
+                                                        <td data-label="سعر التجزئة">@p.Pro_SalePrice_Max د.ج</td>
+                                                        <td data-label="الإجراءات" style="white-space: nowrap;">
                                                             <button class="btn-edit" @onclick="() => EditTypeProduct(p)">تعديل</button>
                                                             <button class="btn-delete" @onclick="() => DeleteTypeProduct(p.Id)">حذف</button>
                                                         </td>

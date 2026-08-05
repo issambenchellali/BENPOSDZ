@@ -34,12 +34,16 @@
 - `PROGRESS_REPORT.md` حُدّث بأقسام 14 (أندرويد) + 15 (التحضير للإطلاق).
 
 ### Active
-- لا شيء قيد التنفيذ — جاهزية الإطلاق مكتملة من ناحية البناء والتوقيع وCI والتوثيق.
+- **بانتظار المستخدم**: ضبط أسرار GitHub الثلاثة (`ANDROID_KEYSTORE` من `keys/keystore-base64.txt`، `ANDROID_KEYSTORE_PASS`، `ANDROID_ALIAS=benpos`) في `Settings → Secrets and variables → Actions`، ثم دفع Tag `v1.1.0` لتشغيل CI.
+
+### Completed (آخر جلسة)
+- أُصلح المستودع: كان `.git` داخل `BENPOSDZ\` (يضم 10,435 ملفاً، 781MB من bin/) — حُذف وأُعيد init في جذر المشروع مع `.gitignore`؛ الدفع نجح (`main` = 92 ملفاً على `github.com/issambenchellali/BENPOSDZ`).
+- CI: أُضيف `dotnet workload install maui-windows` لوظيفة ويندوز (كانت ستفشل) — مدفوع في `e0d8467`.
+- `keys/keystore-base64.txt` مولّد (3.5KB) لملء سر `ANDROID_KEYSTORE`.
 
 ### Blocked
-- الاختبار الميداني على أجهزة حقيقية (يتطلب أجهزة المستخدم).
-- رفع المشروع إلى GitHub (ليس repo بعد) + تعيين أسرار التوقيع الثلاثة في الـ repo.
-- قرار التوزيع: Sideload (جاهز) مقابل Google Play.
+- Tag `v1.1.0` غير مدفوع بعد — بانتظار الأسرار (قرار المستخدم: "انتظر حتى أضبط الأسرار").
+
 
 ### Next Move
 1. المستخدم ينفّذ `docs/FIELD_TEST.md` على جهازين.

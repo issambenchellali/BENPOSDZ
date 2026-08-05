@@ -44,7 +44,7 @@
 }
 
 <div class="products-table-wrap">
-<table class="products-table">
+<table class="products-table responsive-table">
     <thead>
         <tr>
             <th>الصورة</th>
@@ -61,16 +61,16 @@
         @foreach (var product in productsList)
         {
             <tr>
-                <td><img src="@(string.IsNullOrEmpty(product.Pro_Image) ? "https://via.placeholder.com/40" : product.Pro_Image)" class="product-img" /></td>
-                <td>@product.Pro_Name (@product.Pro_Mark)</td>
-                <td>@product.Pro_Barcode</td>
-                <td class="@(product.Pro_Qty <= product.Pro_QtyMin && product.Pro_QtyMin > 0 ? "low-stock" : "")">@product.Pro_Qty @product.Pro_Unit</td>
-                <td><input type="number" @bind="product.Pro_Qty_Inv" @bind:after="() => SaveInventoryState(product)" class="inv-input" disabled="@(product.Is_Counted == false)" /></td>
-				<td><input type="checkbox" @bind="product.Is_Counted" @bind:after="() => ToggleCounted(product)" /></td>
+                <td data-label="الصورة"><img src="@(string.IsNullOrEmpty(product.Pro_Image) ? "https://via.placeholder.com/40" : product.Pro_Image)" class="product-img" /></td>
+                <td data-label="الاسم">@product.Pro_Name (@product.Pro_Mark)</td>
+                <td data-label="الباركود">@product.Pro_Barcode</td>
+                <td data-label="كمية المخزون" class="@(product.Pro_Qty <= product.Pro_QtyMin && product.Pro_QtyMin > 0 ? "low-stock" : "")">@product.Pro_Qty @product.Pro_Unit</td>
+                <td data-label="كمية الجرد"><input type="number" @bind="product.Pro_Qty_Inv" @bind:after="() => SaveInventoryState(product)" class="inv-input" disabled="@(product.Is_Counted == false)" /></td>
+				<td data-label="تم الجرد"><input type="checkbox" @bind="product.Is_Counted" @bind:after="() => ToggleCounted(product)" /></td>
 				
 
-                <td>@(string.IsNullOrEmpty(product.Pro_date_exp) ? "-" : product.Pro_date_exp)</td>
-                <td>
+                <td data-label="الصلاحية">@(string.IsNullOrEmpty(product.Pro_date_exp) ? "-" : product.Pro_date_exp)</td>
+                <td data-label="إجراءات">
 					@if (authService.IsAdmin)
 					{
 						<button class="btn-edit" @onclick="() => EditProduct(product)">تعديل</button>
@@ -275,7 +275,6 @@
         .top-bar .search-input { width: 100%; min-height: 44px; font-size: 16px; }
         .top-bar button { flex: 1 1 auto; min-width: 48px; min-height: 48px; font-size: 15px; }
         .btn-edit, .btn-delete, .btn-print { min-width: 48px; min-height: 48px; font-size: 15px; }
-        .products-table { min-width: 720px; }
         .products-table th, .products-table td { padding: 8px; }
     }
 </style>

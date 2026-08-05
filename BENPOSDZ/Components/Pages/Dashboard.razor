@@ -196,15 +196,15 @@
                 }
                 else
                 {
-                    <table class="fin-mini-table">
+                    <table class="fin-mini-table responsive-table">
                         <thead><tr><th>الوقت</th><th>الزبون</th><th>المبلغ</th></tr></thead>
                         <tbody>
                             @foreach (var inv in recentInvoices)
                             {
                                 <tr>
-                                    <td>@inv.Order_Date.ToString("HH:mm")</td>
-                                    <td>@inv.Person_Name</td>
-                                    <td>@inv.Price د.ج</td>
+                                    <td data-label="الوقت">@inv.Order_Date.ToString("HH:mm")</td>
+                                    <td data-label="الزبون">@inv.Person_Name</td>
+                                    <td data-label="المبلغ">@inv.Price د.ج</td>
                                 </tr>
                             }
                         </tbody>
@@ -221,7 +221,7 @@
             <span class="fin-count">آخر @expensesList.Count مصروف</span>
         </div>
         <div class="fin-exp-table-wrap">
-            <table class="fin-exp-table">
+            <table class="fin-exp-table responsive-table">
                 <thead>
                     <tr><th>التاريخ</th><th>المصروف</th><th>المبلغ</th><th>ملاحظات</th><th>إجراء</th></tr>
                 </thead>
@@ -229,11 +229,11 @@
                     @foreach (var exp in expensesList)
                     {
                         <tr>
-                            <td>@exp.Expn_Date.ToString("yyyy-MM-dd HH:mm")</td>
-                            <td>@exp.Expn_Name</td>
-                            <td class="exp-amount">@exp.Expn_Price.ToString("0.00") د.ج</td>
-                            <td>@exp.Expn_Notes</td>
-                            <td>
+                            <td data-label="التاريخ">@exp.Expn_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td data-label="المصروف">@exp.Expn_Name</td>
+                            <td data-label="المبلغ" class="exp-amount">@exp.Expn_Price.ToString("0.00") د.ج</td>
+                            <td data-label="ملاحظات">@exp.Expn_Notes</td>
+                            <td data-label="إجراء">
                                 @if (authService.IsAdmin)
                                 {
                                     <button class="fin-del" @onclick="() => DeleteExpense(exp.Id)">🗑️</button>

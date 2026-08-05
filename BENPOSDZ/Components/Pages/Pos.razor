@@ -219,7 +219,7 @@
             }
             else
             {
-                <table class="hist-table">
+                <table class="hist-table responsive-table">
                     <thead>
                         <tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>المدفوع</th><th>الدين</th><th>طباعة</th></tr>
                     </thead>
@@ -227,12 +227,12 @@
                         @foreach (var inv in customerInvoices)
                         {
                             <tr>
-                                <td>@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
-                                <td>@GetTypeName(inv.Order_Type)</td>
-                                <td>@inv.Price.ToString("0.00") د.ج</td>
-                                <td>@inv.Paid.ToString("0.00") د.ج</td>
-                                <td class="@(inv.Unpaid > 0 ? "debt-color" : "")">@inv.Unpaid.ToString("0.00") د.ج</td>
-                                <td><button class="btn-print-sm" @onclick="() => PrintCustomerInvoice(inv.Id)">🖨️</button></td>
+                                <td data-label="التاريخ">@inv.Order_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td data-label="النوع">@GetTypeName(inv.Order_Type)</td>
+                                <td data-label="المبلغ">@inv.Price.ToString("0.00") د.ج</td>
+                                <td data-label="المدفوع">@inv.Paid.ToString("0.00") د.ج</td>
+                                <td data-label="الدين" class="@(inv.Unpaid > 0 ? "debt-color" : "")">@inv.Unpaid.ToString("0.00") د.ج</td>
+                                <td data-label="طباعة"><button class="btn-print-sm" @onclick="() => PrintCustomerInvoice(inv.Id)">🖨️</button></td>
                             </tr>
                         }
                     </tbody>
