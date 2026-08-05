@@ -9,60 +9,109 @@ namespace BENPOSDZ.Services
     public class PrintService
     {
         private readonly BarcodeService _barcodeService;
+        private readonly DatabaseService _dbService;
 
-        public PrintService(BarcodeService barcodeService) => _barcodeService = barcodeService;
+        public PrintService(BarcodeService barcodeService, DatabaseService dbService)
+        {
+            _barcodeService = barcodeService;
+            _dbService = dbService;
+        }
 
         public async Task PrintHtmlAsync(IJSRuntime js, string html, bool isReceipt)
         {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                _dbService.LogEvent("🖨️ محاولة طباعة بدون محتوى HTML — تم تجاهلها.", "WARN");
+                return;
+            }
+            try
+            {
 #if ANDROID
-            PrintOnAndroid(html);
-            await Task.CompletedTask;
+                PrintOnAndroid(html);
+                await Task.CompletedTask;
 #else
-            await js.InvokeVoidAsync("printHtml", html, isReceipt);
+                await js.InvokeVoidAsync("printHtml", html, isReceipt);
 #endif
+            }
+            catch (Exception ex)
+            {
+                _dbService.LogEvent($"❌ فشل طباعة المستند: {ex.Message}", "ERROR");
+            }
         }
 
         // طباعة باركود محلياً عبر ZXing (بدون أي خدمة خارجية) مع خيارات التخصيص من الإعدادات
         public async Task PrintBarcodeAsync(IJSRuntime js, BarcodePrintData data)
         {
-            if (data == null || string.IsNullOrWhiteSpace(data.Code)) return;
-            var opts = _barcodeService.LoadOptions();
-            var (w, h) = BarcodeService.GetSizePixels(opts.Size, opts.Type);
-            string imageUri = _barcodeService.GenerateBarcodeDataUri(data.Code, opts.Type, w, h);
-            string html = _barcodeService.BuildPrintDocument(data.Name, data.Code, data.Price, data.HigherPrice, data.Quantity, opts, imageUri);
+            if (data == null || string.IsNullOrWhiteSpace(data.Code))
+            {
+                _dbService.LogEvent("🖨️ محاولة طباعة باركود بدون بيانات — تم تجاهلها.", "WARN");
+                return;
+            }
+            try
+            {
+                var opts = _barcodeService.LoadOptions();
+                var (w, h) = BarcodeService.GetSizePixels(opts.Size, opts.Type);
+                string imageUri = _barcodeService.GenerateBarcodeDataUri(data.Code, opts.Type, w, h);
+                string html = _barcodeService.BuildPrintDocument(data.Name, data.Code, data.Price, data.HigherPrice, data.Quantity, opts, imageUri);
 #if ANDROID
-            PrintOnAndroid(html);
-            await Task.CompletedTask;
+                PrintOnAndroid(html);
+                await Task.CompletedTask;
 #else
-            await js.InvokeVoidAsync("printHtml", html, false);
+                await js.InvokeVoidAsync("printHtml", html, false);
 #endif
+            }
+            catch (Exception ex)
+            {
+                _dbService.LogEvent($"❌ فشل طباعة الباركود: {ex.Message}", "ERROR");
+            }
         }
 
         // المشاركة على أندرويد (شيت المشاركة) — على ويندوز تنزيل ملف HTML
         public async Task ShareHtmlAsync(IJSRuntime js, string html, string title)
         {
-#if ANDROID
-            var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
-            if (activity == null) return;
-            activity.RunOnUiThread(() =>
+            if (string.IsNullOrWhiteSpace(html))
             {
-                var intent = new Android.Content.Intent(Android.Content.Intent.ActionSend);
-                intent.SetType("text/plain");
-                intent.PutExtra(Android.Content.Intent.ExtraSubject, title);
-                intent.PutExtra(Android.Content.Intent.ExtraText, StripHtml(html));
-                activity.StartActivity(Android.Content.Intent.CreateChooser(intent, title));
-            });
-            await Task.CompletedTask;
+                _dbService.LogEvent("📤 محاولة مشاركة بدون محتوى — تم تجاهلها.", "WARN");
+                return;
+            }
+            try
+            {
+#if ANDROID
+                var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+                if (activity == null)
+                {
+                    _dbService.LogEvent("📤 لا يوجد نشاط Android نشط — تعذرت المشاركة.", "WARN");
+                    return;
+                }
+                activity.RunOnUiThread(() =>
+                {
+                    var intent = new Android.Content.Intent(Android.Content.Intent.ActionSend);
+                    intent.SetType("text/plain");
+                    intent.PutExtra(Android.Content.Intent.ExtraSubject, title);
+                    intent.PutExtra(Android.Content.Intent.ExtraText, StripHtml(html));
+                    activity.StartActivity(Android.Content.Intent.CreateChooser(intent, title));
+                });
+                await Task.CompletedTask;
 #else
-            await js.InvokeVoidAsync("downloadDoc", html, title.Replace(' ', '_') + ".html");
+                await js.InvokeVoidAsync("downloadDoc", html, title.Replace(' ', '_') + ".html");
 #endif
+            }
+            catch (Exception ex)
+            {
+                _dbService.LogEvent($"❌ فشل المشاركة: {ex.Message}", "ERROR");
+            }
         }
 
 #if ANDROID
         private void PrintOnAndroid(string html)
         {
+            if (string.IsNullOrWhiteSpace(html)) return;
             var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
-            if (activity == null) return;
+            if (activity == null)
+            {
+                _dbService.LogEvent("🖨️ لا يوجد نشاط Android نشط — تعذرت الطباعة.", "WARN");
+                return;
+            }
             activity.RunOnUiThread(() =>
             {
                 try
@@ -73,28 +122,49 @@ namespace BENPOSDZ.Services
                     };
                     webView.Settings.JavaScriptEnabled = true;
                     webView.Settings.DomStorageEnabled = true;
-                    webView.SetWebViewClient(new PrintWebViewClient(activity));
+                    webView.SetWebViewClient(new PrintWebViewClient(activity, _dbService));
                     webView.LoadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _dbService.LogEvent($"❌ فشل تهيئة الطباعة على Android: {ex.Message}", "ERROR");
+                }
             });
         }
 
         private class PrintWebViewClient : Android.Webkit.WebViewClient
         {
             private readonly Android.App.Activity _activity;
-            public PrintWebViewClient(Android.App.Activity activity) => _activity = activity;
+            private readonly DatabaseService _dbService;
+            public PrintWebViewClient(Android.App.Activity activity, DatabaseService dbService)
+            {
+                _activity = activity;
+                _dbService = dbService;
+            }
 
             public override void OnPageFinished(Android.Webkit.WebView? view, string? url)
             {
                 base.OnPageFinished(view, url);
                 try
                 {
-                    var printManager = (Android.Print.PrintManager)_activity.GetSystemService(Android.Content.Context.PrintService)!;
-                    var adapter = view!.CreatePrintDocumentAdapter("BENPOSDZ");
-                    printManager.Print("BENPOSDZ", adapter, new Android.Print.PrintAttributes.Builder().Build()!);
+                    if (view == null)
+                    {
+                        _dbService.LogEvent("🖨️ WebView فارغ — تعذرت الطباعة على Android.", "WARN");
+                        return;
+                    }
+                    var printManager = (Android.Print.PrintManager)_activity.GetSystemService(Android.Content.Context.PrintService);
+                    if (printManager == null)
+                    {
+                        _dbService.LogEvent("🖨️ خدمة الطباعة غير متوفرة على هذا الجهاز.", "WARN");
+                        return;
+                    }
+                    var adapter = view.CreatePrintDocumentAdapter("BENPOSDZ");
+                    printManager.Print("BENPOSDZ", adapter, new Android.Print.PrintAttributes.Builder().Build());
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _dbService.LogEvent($"❌ فشل إرسال المستند للطباعة على Android: {ex.Message}", "ERROR");
+                }
             }
         }
 #endif
