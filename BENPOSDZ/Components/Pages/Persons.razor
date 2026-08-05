@@ -103,6 +103,27 @@
                         }
                     </tbody>
                 </table>
+                @if (FilteredPayments.Any())
+                {
+                    <h4 class="history-section-title">💵 الدفعات المسجلة</h4>
+                    <table class="history-table responsive-table">
+                        <thead>
+                            <tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>رقم الفاتورة</th><th>ملاحظات</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var pay in FilteredPayments)
+                            {
+                                <tr>
+                                    <td data-label="التاريخ">@pay.Hist_Date.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td data-label="النوع">@pay.Hist_Type</td>
+                                    <td data-label="المبلغ" class="debt-color">@pay.Hist_Amount.ToString("0.00") د.ج</td>
+                                    <td data-label="رقم الفاتورة">@(!string.IsNullOrEmpty(pay.Invoice_ID) ? ShortId(pay.Invoice_ID) : "-")</td>
+                                    <td data-label="ملاحظات">@pay.Hist_Notes</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
             </div>
             <button class="btn-cancel" @onclick="() => showHistoryModal = false" style="width:100%; margin-top:15px;">إغلاق</button>
         </div>
@@ -220,6 +241,7 @@
     .btn-partial { background: #fd7e14; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
     .btn-print-sm { background: #17a2b8; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
     .fin-empty { color: #999; padding: 16px; }
+    .history-section-title { text-align: right; margin: 18px 0 6px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-size: 15px; }
     .form-group { text-align: right; margin: 15px 0; }
     .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
     .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 18px; }
@@ -265,6 +287,7 @@
     private string historyName = "";
     private string historyPersonId = "";
     private List<InvoiceModel> personInvoices = new();
+    private List<HistoriqueModel> personPayments = new();
     private DateTime? filterFrom;
     private DateTime? filterTo;
     private bool printInvoiceDetails = false;
@@ -283,6 +306,10 @@
     private IEnumerable<InvoiceModel> FilteredInvoices => personInvoices.Where(inv =>
         (filterFrom == null || inv.Order_Date.Date >= filterFrom.Value.Date) &&
         (filterTo == null || inv.Order_Date.Date <= filterTo.Value.Date));
+
+    private IEnumerable<HistoriqueModel> FilteredPayments => personPayments.Where(p =>
+        (filterFrom == null || p.Hist_Date.Date >= filterFrom.Value.Date) &&
+        (filterTo == null || p.Hist_Date.Date <= filterTo.Value.Date));
 
     private static string ShortId(string id) => id.Length >= 8 ? id.Substring(0, 8) : id;
 
@@ -346,6 +373,8 @@
         using var connection = dbService.CreateConnection();
         string sql = "SELECT * FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Order_Date DESC";
         personInvoices = (await connection.QueryAsync<InvoiceModel>(sql, new { Id = id })).ToList();
+        string sqlPay = "SELECT * FROM Historique WHERE Person_ID = @Id AND IsDeleted = 0 ORDER BY Hist_Date DESC";
+        personPayments = (await connection.QueryAsync<HistoriqueModel>(sqlPay, new { Id = id })).ToList();
         showHistoryModal = true;
     }
 
@@ -506,6 +535,7 @@
             toastService.ShowSuccessShort("تم تسديد الدين بنجاح وتحديث الفواتير!", "✅ الدفع");
             showPayModal = false;
             LoadPersons();
+            await PrintPaymentReceiptAsync(selectedPerson.Person_Name, paymentAmount, "تسديد دين", null, Math.Max(0, selectedPerson.Person_Debt - paymentAmount));
         }
         catch (Exception ex)
         {
@@ -567,11 +597,58 @@
             showPartialPayModal = false;
             LoadPersons();
             await ViewHistory(historyPersonId, historyName);
+            await PrintPaymentReceiptAsync(historyName, partialPayAmount, "دفعة جزئية", partialPayInvoice.Id, partialPayInvoice.Unpaid);
         }
         catch (Exception ex)
         {
             transaction.Rollback();
             toastService.ShowError("خطأ: " + ex.Message, "❌ الدفع");
+        }
+    }
+
+    // طباعة وصل (إيصال) تسديد الدين — قابل للطباعة على أندرويد وويندوز
+    private async Task PrintPaymentReceiptAsync(string personName, decimal amount, string type, string? invoiceId, decimal remainingDebt)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'/><title>وصل تسديد</title><style>");
+            sb.AppendLine("body{font-family:Arial,sans-serif;width:300px;margin:0 auto;direction:rtl;}");
+            sb.AppendLine("h2{text-align:center;margin:6px 0 2px;font-size:18px;}");
+            sb.AppendLine("p.center{text-align:center;color:#555;margin:2px 0;font-size:12px;}");
+            sb.AppendLine(".line{border-top:1px dashed #000;margin:10px 0;}");
+            sb.AppendLine("table{width:100%;font-size:13px;}");
+            sb.AppendLine("td{padding:3px 0;}");
+            sb.AppendLine("td.k{color:#555;width:45%;}td.v{font-weight:bold;}");
+            sb.AppendLine(".total{font-size:16px;color:#28a745;text-align:center;padding:8px 0;}");
+            sb.AppendLine(".sig{margin-top:26px;font-size:12px;display:flex;justify-content:space-between;}");
+            sb.AppendLine(".sig span{color:#555;border-top:1px solid #999;padding-top:4px;width:45%;text-align:center;}</style></head><body>");
+            sb.AppendLine("<h2>BENPOS</h2>");
+            sb.AppendLine("<p class='center'>نظام إدارة المبيعات</p>");
+            sb.AppendLine("<p class='center'>وصل تسديد دين — " + type + "</p>");
+            sb.AppendLine("<div class='line'></div>");
+            sb.AppendLine("<table>");
+            sb.AppendLine($"<tr><td class='k'>التاريخ</td><td class='v'>{DateTime.Now:yyyy-MM-dd HH:mm}</td></tr>");
+            sb.AppendLine($"<tr><td class='k'>الاسم</td><td class='v'>{System.Net.WebUtility.HtmlEncode(personName)}</td></tr>");
+            sb.AppendLine($"<tr><td class='k'>نوع العملية</td><td class='v'>{type}</td></tr>");
+            if (!string.IsNullOrEmpty(invoiceId))
+                sb.AppendLine($"<tr><td class='k'>رقم الفاتورة</td><td class='v'>{ShortId(invoiceId)}</td></tr>");
+            sb.AppendLine($"<tr><td class='k'>البائع</td><td class='v'>{authService.CurrentUser?.User_FullName ?? authService.CurrentUser?.User_Name ?? ""}</td></tr>");
+            sb.AppendLine("</table>");
+            sb.AppendLine($"<div class='total'>المبلغ المدفوع: {amount:0.00} د.ج</div>");
+            if (remainingDebt > 0)
+                sb.AppendLine($"<p class='center' style='color:#dc3545;'>الدين المتبقي: {remainingDebt:0.00} د.ج</p>");
+            else
+                sb.AppendLine("<p class='center' style='color:#28a745;'>✅ تم تسديد الدين بالكامل</p>");
+            sb.AppendLine("<div class='line'></div>");
+            sb.AppendLine("<div class='sig'><span>التوقيع</span><span>الختم</span></div>");
+            sb.AppendLine("</body></html>");
+
+            await sysPrintService.PrintHtmlAsync(JS, sb.ToString(), true);
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("تعذر طباعة الوصل: " + ex.Message, "❌ الطباعة");
         }
     }
 
