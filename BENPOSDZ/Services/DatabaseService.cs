@@ -87,10 +87,12 @@ namespace BENPOSDZ.Services
         public void ReloadSettings()
         {
             LoadConnectionSettings();
+            // تهيئة/ترحيل مخطط القاعدة الفعلية حسب الوضع الحالي (شامل SQLite المحلي)
+            // حتى لا يفشل تسجيل الدخول عند التبديل إلى الوضع المحلي بقاعدة قديمة.
+            InitializeSystem();
             if (DBMode == "LAN")
             {
                 LogEvent("تم التبديل لوضع الشبكة المحلية (LAN). جاري الاتصال بـ MySQL...");
-                InitializeSystem();
                 ConnectionStatus = IsServerOnline ? "🟢 متصل بالخادم (MySQL)" : "🔴 تعذر الاتصال بالخادم (MySQL)";
             }
             else
@@ -241,6 +243,15 @@ namespace BENPOSDZ.Services
         {
             try
             {
+                // ضمان جاهزية القاعدة المحلية (SQLite) دائماً — حتى في وضع LAN —
+                // حتى لا يفشل التبديل إلى الوضع المحلي لاحقاً بسبب مخطط قديم/ناقص
+                // (مثل نقص عمود IsDeleted في قاعدة قديمة).
+                using (var localConnection = CreateLocalConnection())
+                {
+                    CreateTables(localConnection);
+                    SeedDefaults(localConnection);
+                }
+
                 if (DBMode == "LAN")
                 {
                     // وضع LAN: كل شيء على MySQL فقط — لا SQLite للبيانات التجارية
@@ -252,9 +263,6 @@ namespace BENPOSDZ.Services
                 else
                 {
                     // وضع محلي: كل شيء على SQLite فقط
-                    using var localConnection = CreateLocalConnection();
-                    CreateTables(localConnection);
-                    SeedDefaults(localConnection);
                     LogEvent("✅ تمت تهيئة النظام على SQLite (وضع محلي).");
                 }
             }
