@@ -47,6 +47,8 @@
                     {
                         <button class="btn-pay" @onclick="() => OpenPayModal(p)">💵 تسديد الدين</button>
                     }
+                    <button class="btn-edit-person" @onclick="() => OpenEditPersonModal(p)">✏️ تعديل</button>
+                    <button class="btn-delete-person" @onclick="() => DeletePerson(p)">🗑️</button>
                 </td>
             </tr>
         }
@@ -146,6 +148,47 @@
     </div>
 }
 
+@if (showEditPersonModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-box" style="width: 520px;">
+            <h3>✏️ تعديل بيانات: @editingPerson.Person_Name</h3>
+            <div class="form-group" style="text-align:right;">
+                <label>الاسم</label>
+                <input type="text" @bind="editingPerson.Person_Name" placeholder="اسم الشخص" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>الهاتف</label>
+                <input type="text" @bind="editingPerson.Person_Phone" placeholder="رقم الهاتف" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>العنوان</label>
+                <input type="text" @bind="editingPerson.Person_Adress" placeholder="العنوان" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>ملاحظات</label>
+                <input type="text" @bind="editingPerson.Person_Notes" placeholder="ملاحظات إضافية" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>رقم السجل التجاري (RC)</label>
+                <input type="text" @bind="editingPerson.Person_NRC" placeholder="RC" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>رقم الضريبة على الأنشطة (NIF)</label>
+                <input type="text" @bind="editingPerson.Person_NIF" placeholder="NIF" />
+            </div>
+            <div class="form-group" style="text-align:right;">
+                <label>رقم الضمان الاجتماعي (NIS)</label>
+                <input type="text" @bind="editingPerson.Person_NIS" placeholder="NIS" />
+            </div>
+            <div class="modal-actions">
+                <button class="btn-save" @onclick="SavePersonEdit">حفظ التعديل</button>
+                <button class="btn-cancel" @onclick="() => showEditPersonModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; }
     .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
@@ -157,6 +200,8 @@
     .no-debt { color: #28a745; }
     .btn-history { background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
     .btn-pay { background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    .btn-edit-person { background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    .btn-delete-person { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
 
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
     .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; text-align: center;}
@@ -231,6 +276,9 @@
     private bool showPartialPayModal = false;
     private InvoiceModel? partialPayInvoice;
     private decimal partialPayAmount = 0;
+
+    private bool showEditPersonModal = false;
+    private PersonModel editingPerson = new();
 
     private IEnumerable<InvoiceModel> FilteredInvoices => personInvoices.Where(inv =>
         (filterFrom == null || inv.Order_Date.Date >= filterFrom.Value.Date) &&
@@ -315,6 +363,91 @@
         selectedPerson = p;
         paymentAmount = p.Person_Debt; // افتراضياً دفع الكل
         showPayModal = true;
+    }
+
+    // فتح نافذة تعديل بيانات الشخص (نسخة قابلة للتعديل حتى لا تتأثر القائمة أثناء الإدخال)
+    private void OpenEditPersonModal(PersonModel p)
+    {
+        editingPerson = new PersonModel
+        {
+            Id = p.Id,
+            Person_Name = p.Person_Name,
+            Person_Phone = p.Person_Phone,
+            Person_Type = p.Person_Type,
+            Person_Adress = p.Person_Adress,
+            Person_Notes = p.Person_Notes,
+            Person_NRC = p.Person_NRC,
+            Person_NIF = p.Person_NIF,
+            Person_NIS = p.Person_NIS,
+            Person_Debt = p.Person_Debt
+        };
+        showEditPersonModal = true;
+    }
+
+    private async Task SavePersonEdit()
+    {
+        if (!showEditPersonModal || string.IsNullOrEmpty(editingPerson.Id)) return;
+        if (string.IsNullOrWhiteSpace(editingPerson.Person_Name))
+        {
+            toastService.ShowWarning("اسم الشخص مطلوب!", "⚠️ التعديل");
+            return;
+        }
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            using var connection = dbService.CreateConnection();
+            await connection.ExecuteAsync(@"UPDATE Persons SET
+                        Person_Name = @Name, Person_Phone = @Phone, Person_Adress = @Adress, Person_Notes = @Notes,
+                        Person_NRC = @NRC, Person_NIF = @NIF, Person_NIS = @NIS, UpdatedAt = @Date, IsSynced = 0
+                    WHERE Id = @Id",
+                new { Id = editingPerson.Id, Name = editingPerson.Person_Name, Phone = editingPerson.Person_Phone,
+                      Adress = editingPerson.Person_Adress, Notes = editingPerson.Person_Notes, NRC = editingPerson.Person_NRC,
+                      NIF = editingPerson.Person_NIF, NIS = editingPerson.Person_NIS, Date = dateNow });
+            dbService.LogEvent($"✏️ تم تعديل بيانات الشخص: {editingPerson.Person_Name}");
+            showEditPersonModal = false;
+            LoadPersons();
+            toastService.ShowSuccessShort("تم حفظ التعديل بنجاح", "✅ التعديل");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل حفظ التعديل: " + ex.Message, "❌ التعديل");
+        }
+    }
+
+    // حذف آمن للشخص: يُمنع إن كان لديه ديون غير مسددة (حماية الحسابات المالية)
+    private async Task DeletePerson(PersonModel p)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"هل أنت متأكد من حذف «{p.Person_Name}»؟");
+        if (!confirmed) return;
+
+        using var connection = dbService.CreateConnection();
+        decimal unpaidDebt = connection.ExecuteScalar<decimal>("SELECT COALESCE(SUM(Unpaid), 0) FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0 AND Unpaid > 0 AND Order_Type IN (0,1,2)", new { Id = p.Id });
+        if (p.Person_Debt > 0.01m || unpaidDebt > 0.01m)
+        {
+            toastService.ShowWarning("لا يمكن حذف هذا الشخص لأن لديه ديوناً غير مسددة. سدّد الدين أولاً.", "⚠️ الحذف");
+            return;
+        }
+        int invoiceCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Orders WHERE Person_ID = @Id AND IsDeleted = 0", new { Id = p.Id });
+        if (invoiceCount > 0)
+        {
+            toastService.ShowWarning("لا يمكن حذف هذا الشخص لأنه مرتبط بفواتير محفوظة. يمكنك تعديل بياناته بدلاً من الحذف.", "⚠️ الحذف");
+            return;
+        }
+
+        try
+        {
+            string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+            using var conn = dbService.CreateConnection();
+            conn.Execute("UPDATE Persons SET IsDeleted = 1, IsSynced = 0 WHERE Id = @Id", new { Id = p.Id });
+            await LogHistoryAsync(conn, null, p.Id, "حذف شخص", 0, null, "تم حذف الشخص من النظام");
+            dbService.LogEvent($"🗑️ تم حذف الشخص: {p.Person_Name}");
+            LoadPersons();
+            toastService.ShowSuccessShort("تم حذف الشخص", "✅ العملاء والموردون");
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("فشل الحذف: " + ex.Message, "❌ الحذف");
+        }
     }
 
     private async Task ConfirmPayment()
@@ -554,6 +687,11 @@
         public string? Person_Phone { get; set; }
         public int Person_Type { get; set; }
         public decimal Person_Debt { get; set; }
+        public string? Person_Adress { get; set; }
+        public string? Person_Notes { get; set; }
+        public string? Person_NRC { get; set; }
+        public string? Person_NIF { get; set; }
+        public string? Person_NIS { get; set; }
     }
 
     public class InvoiceModel
