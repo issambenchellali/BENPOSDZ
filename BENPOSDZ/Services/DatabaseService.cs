@@ -277,6 +277,7 @@ namespace BENPOSDZ.Services
                 CREATE TABLE IF NOT EXISTS Coffer (Id VARCHAR(36) PRIMARY KEY, Amount DECIMAL(18,2), UpdatedAt VARCHAR(30));
                 CREATE TABLE IF NOT EXISTS Expenses (Id VARCHAR(36) PRIMARY KEY, Expn_Name VARCHAR(100), Expn_Price DECIMAL(18,2), Expn_Date VARCHAR(30), Expn_Notes VARCHAR(200), UpdatedAt VARCHAR(30), IsSynced INT DEFAULT 0, IsDeleted INT DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS Historique (Id VARCHAR(36) PRIMARY KEY, Person_ID VARCHAR(36), Hist_Date VARCHAR(30), Hist_Type VARCHAR(50), Hist_Amount DECIMAL(18,2), Invoice_ID VARCHAR(36), Hist_Notes VARCHAR(255), UpdatedAt VARCHAR(30), IsSynced INT DEFAULT 0, IsDeleted INT DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS ActivationLog (Id VARCHAR(36) PRIMARY KEY, Code VARCHAR(10), MachineID VARCHAR(50), ActivatedAt VARCHAR(30), ExpiryDate VARCHAR(30));
             ");
 
             // ترحيل القواعد القديمة: إضافة الأعمدة الجديدة إن لم تكن موجودة

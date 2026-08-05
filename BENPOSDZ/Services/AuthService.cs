@@ -124,15 +124,77 @@ namespace BENPOSDZ.Services
             catch { return false; }
         }
 
-        public bool ValidateActivationCode(DatabaseService dbService, string machineId, string enteredCode)
+        // توليد كود التفعيل المرتبط بالساعة: نفس الجهاز + السر + الساعة الحالية (yyyyMMddHH)
+        public string ComputeActivationCode(DatabaseService dbService, string machineId, DateTime? hour = null)
         {
-            string raw = machineId + GetActivationSecret(dbService);
+            string secret = GetActivationSecret(dbService);
+            string stamp = (hour ?? DateTime.UtcNow).ToString("yyyyMMddHH");
+            return ComputeCode(machineId, secret, stamp);
+        }
+
+        private static string ComputeCode(string machineId, string secret, string stamp)
+        {
+            string raw = machineId + secret + stamp;
             using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
             {
                 byte[] bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
                 int val = BitConverter.ToInt32(bytes, 0);
-                return enteredCode == (Math.Abs(val) % 1000000).ToString("D6");
+                return (Math.Abs(val) % 1000000).ToString("D6");
             }
+        }
+
+        // الكود صالح فقط خلال الساعة التي وُلّد فيها (من 00 دقيقة حتى 59 من نفس الساعة).
+        // يُقبل مع تفاوت ساعة واحدة أماماً وخلفاً لتجنب مشاكل فرق التوقيت بين المولد والجهاز.
+        public bool ValidateActivationCode(DatabaseService dbService, string machineId, string enteredCode)
+        {
+            enteredCode = (enteredCode ?? "").Trim();
+            if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
+                return false;
+
+            string secret = GetActivationSecret(dbService);
+            var nowUtc = DateTime.UtcNow;
+            var nowLocal = DateTime.Now;
+            string[] stamps =
+            {
+                nowUtc.AddHours(-1).ToString("yyyyMMddHH"), nowUtc.ToString("yyyyMMddHH"), nowUtc.AddHours(1).ToString("yyyyMMddHH"),
+                nowLocal.AddHours(-1).ToString("yyyyMMddHH"), nowLocal.ToString("yyyyMMddHH"), nowLocal.AddHours(1).ToString("yyyyMMddHH")
+            };
+            return stamps.Any(s => ComputeCode(machineId, secret, s) == enteredCode);
+        }
+
+        // هل استُخدم هذا الكود من قبل؟ (منع إعادة الاستخدام)
+        public bool IsActivationCodeUsed(DatabaseService dbService, string code)
+        {
+            using var connection = dbService.CreateLocalConnection();
+            return connection.ExecuteScalar<int>("SELECT COUNT(*) FROM ActivationLog WHERE Code = @Code", new { Code = code }) > 0;
+        }
+
+        private void RecordActivationUsage(DatabaseService dbService, string code, DateTime expiry)
+        {
+            using var connection = dbService.CreateLocalConnection();
+            connection.Execute("INSERT INTO ActivationLog (Id, Code, MachineID, ActivatedAt, ExpiryDate) VALUES (@Id, @Code, @MachineID, @At, @Exp)",
+                new { Id = Guid.NewGuid().ToString(), Code = code, MachineID = GetMachineId(),
+                      At = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"), Exp = expiry.ToString("yyyy-MM-dd HH:mm:ss") });
+        }
+
+        // التفعيل الكامل: الكود صحيح (مرتبط بالساعة) + غير مستخدم من قبل + بدون تراكم سنوات
+        public (bool Success, string? Error, DateTime? Expiry) TryActivateWithCode(DatabaseService dbService, string enteredCode)
+        {
+            enteredCode = (enteredCode ?? "").Trim();
+            if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
+                return (false, "أدخل كود التفعيل المكوّن من 6 أرقام.", null);
+
+            string machineId = GetMachineId();
+            if (IsActivationCodeUsed(dbService, enteredCode))
+                return (false, "هذا الكود مستخدم بالفعل ولا يمكن إعادة استخدامه.", null);
+
+            if (!ValidateActivationCode(dbService, machineId, enteredCode))
+                return (false, "كود التفعيل غير صحيح أو انتهت صلاحيته. الكود صالح فقط خلال الساعة التي وُلّد فيها.", null);
+
+            DateTime newExp = AddLicenseTime(dbService, 1);
+            RecordActivationUsage(dbService, enteredCode, newExp);
+            dbService.LogEvent("✅ تم تفعيل البرنامج بكود سري (استخدام واحد، مرتبط بالساعة).");
+            return (true, null, newExp);
         }
 
         // تسجيل الدخول بكود التفعيل (6 أرقام): يُفعّل البرنامج ويدخل بحساب المدير مباشرة
@@ -159,12 +221,9 @@ namespace BENPOSDZ.Services
 
         public DateTime AddLicenseTime(DatabaseService dbService, int yearsToAdd)
         {
-            // 🔥 إجبار الاتصال المحلي
+            // 🔥 إجبار الاتصال المحلي — لا تراكم سنوات: الكود الجديد يحل محل القديم
             using var connection = dbService.CreateLocalConnection();
-            var expStr = connection.QueryFirstOrDefault<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'LicenseExpiryDate'");
-            DateTime currentExpiry = DateTime.TryParse(expStr, out var d) && d > DateTime.UtcNow ? d : DateTime.UtcNow;
-            
-            DateTime newExpiry = currentExpiry.AddYears(yearsToAdd);
+            DateTime newExpiry = DateTime.UtcNow.AddYears(yearsToAdd);
             connection.Execute("DELETE FROM AppSettings WHERE `Key` = 'LicenseExpiryDate'");
             connection.Execute("INSERT INTO AppSettings (`Key`, `Value`) VALUES ('LicenseExpiryDate', @Date)", new { Date = newExpiry.ToString("yyyy-MM-dd HH:mm:ss") });
             

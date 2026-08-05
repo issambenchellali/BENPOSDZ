@@ -606,6 +606,7 @@ else if (currentTab == "lic")
 
         <hr />
         <h4>طريقة 1: تفعيل بكود سري (سنة واحدة)</h4>
+        <p style="font-size: 12px; color: #666;">الكود مرتبط بالساعة الحالية وصالح للاستخدام مرة واحدة فقط (من 00 إلى 59 دقيقة من نفس الساعة). بعد استعماله لا يمكن إعادة استخدامه، ولا تتراكم السنوات.</p>
         <div class="machine-id-box">
             <label>رقم الجهاز (Machine ID):</label>
             <h2 style="color: #007bff; letter-spacing: 2px;">@machineId</h2>
@@ -1567,16 +1568,18 @@ else if (currentTab == "update")
 
     private async Task ActivateWithCode()
     {
-        if (authService.ValidateActivationCode(dbService, machineId, enteredLicenseKey))
+        var (success, error, newExp) = authService.TryActivateWithCode(dbService, enteredLicenseKey);
+        if (success && newExp != null)
         {
-            var newExp = authService.AddLicenseTime(dbService, 1);
-            settings[K_LicenseExpiryDate] = newExp.ToString("yyyy-MM-dd HH:mm:ss");
+            settings[K_LicenseExpiryDate] = newExp.Value.ToString("yyyy-MM-dd HH:mm:ss");
             isLicensed = true;
-            toastService.ShowSuccess("تم تفعيل البرنامج وإضافة سنة كاملة", "✅ تفعيل ناجح");
+            toastService.ShowSuccess("تم تفعيل البرنامج بنجاح (الكود صالح للاستخدام مرة واحدة فقط)", "✅ تفعيل ناجح");
         }
-        else { toastService.ShowError("كود التفعيل غير صحيح", "❌ تفعيل فاشل"); }
+        else
+        {
+            toastService.ShowError(error ?? "كود التفعيل غير صحيح", "❌ تفعيل فاشل");
+        }
 
-        // أضف هذا السطر لحل التحذير
         await Task.CompletedTask;
     }
 
