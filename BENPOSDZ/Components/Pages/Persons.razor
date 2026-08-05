@@ -18,6 +18,10 @@
     {
         <button class="tab-btn @(currentTab == 2 ? "active" : "")" @onclick="() => SwitchTab(2)">🚚 الموردين</button>
     }
+    <span class="tabs-spacer"></span>
+    <button class="btn-add-person" @onclick="() => OpenAddPersonModal(currentTab)">
+        @(currentTab == 2 ? "🚚 إضافة مورد" : "👤 إضافة عميل")
+    </button>
 </div>
 
 <div class="debt-summary">
@@ -173,7 +177,8 @@
 {
     <div class="modal-overlay">
         <div class="modal-box" style="width: 520px;">
-            <h3>✏️ تعديل بيانات: @editingPerson.Person_Name</h3>
+            <button class="btn-modal-close" @onclick="() => showEditPersonModal = false" aria-label="إغلاق" title="إغلاق">✖</button>
+            <h3>@ModalTitle</h3>
             <div class="form-group" style="text-align:right;">
                 <label>الاسم</label>
                 <input type="text" @bind="editingPerson.Person_Name" placeholder="اسم الشخص" />
@@ -203,7 +208,7 @@
                 <input type="text" @bind="editingPerson.Person_NIS" placeholder="NIS" />
             </div>
             <div class="modal-actions">
-                <button class="btn-save" @onclick="SavePersonEdit">حفظ التعديل</button>
+                <button class="btn-save" @onclick="SavePersonEdit">@(isAddMode ? "إضافة" : "حفظ التعديل")</button>
                 <button class="btn-cancel" @onclick="() => showEditPersonModal = false">إلغاء</button>
             </div>
         </div>
@@ -211,7 +216,10 @@
 }
 
 <style>
-    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee; align-items: center; flex-wrap: wrap; }
+    .tabs-spacer { flex: 1; }
+    .btn-add-person { background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; min-height: 48px; }
+    .btn-add-person:hover { background: #218838; }
     .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
     .tab-btn.active { color: #007bff; border-bottom: 3px solid #007bff; }
     .persons-table { width: 100%; background: white; border-radius: 8px; overflow: hidden; border-collapse: collapse; }
@@ -225,7 +233,9 @@
     .btn-delete-person { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
 
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;}
-    .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; text-align: center;}
+    .modal-box { background: white; padding: 25px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; text-align: center; position: relative; max-width: 92vw; max-height: 88vh; overflow-y: auto; }
+    .btn-modal-close { position: absolute; top: 8px; left: 8px; width: 36px; height: 36px; border: none; background: #f1f3f5; border-radius: 50%; font-size: 16px; cursor: pointer; z-index: 5; }
+    .btn-modal-close:hover { background: #e2e6ea; }
     .history-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px 12px; }
     .date-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .date-filters label { font-size: 12px; color: #555; font-weight: bold; }
@@ -301,7 +311,12 @@
     private decimal partialPayAmount = 0;
 
     private bool showEditPersonModal = false;
+    private bool isAddMode = false;
     private PersonModel editingPerson = new();
+
+    private string ModalTitle => isAddMode
+        ? (editingPerson.Person_Type == 2 ? "➕ إضافة مورد جديد" : "➕ إضافة عميل جديد")
+        : "✏️ تعديل بيانات: " + editingPerson.Person_Name;
 
     private IEnumerable<InvoiceModel> FilteredInvoices => personInvoices.Where(inv =>
         (filterFrom == null || inv.Order_Date.Date >= filterFrom.Value.Date) &&
@@ -394,6 +409,14 @@
         showPayModal = true;
     }
 
+    // فتح نافذة إضافة شخص جديد (عميل أو مورد حسب التبويب الحالي)
+    private void OpenAddPersonModal(int type)
+    {
+        editingPerson = new PersonModel { Person_Type = type };
+        isAddMode = true;
+        showEditPersonModal = true;
+    }
+
     // فتح نافذة تعديل بيانات الشخص (نسخة قابلة للتعديل حتى لا تتأثر القائمة أثناء الإدخال)
     private void OpenEditPersonModal(PersonModel p)
     {
@@ -410,12 +433,13 @@
             Person_NIS = p.Person_NIS,
             Person_Debt = p.Person_Debt
         };
+        isAddMode = false;
         showEditPersonModal = true;
     }
 
     private async Task SavePersonEdit()
     {
-        if (!showEditPersonModal || string.IsNullOrEmpty(editingPerson.Id)) return;
+        if (!showEditPersonModal) return;
         if (string.IsNullOrWhiteSpace(editingPerson.Person_Name))
         {
             toastService.ShowWarning("اسم الشخص مطلوب!", "⚠️ التعديل");
@@ -425,17 +449,30 @@
         {
             string dateNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
             using var connection = dbService.CreateConnection();
-            await connection.ExecuteAsync(@"UPDATE Persons SET
-                        Person_Name = @Name, Person_Phone = @Phone, Person_Adress = @Adress, Person_Notes = @Notes,
-                        Person_NRC = @NRC, Person_NIF = @NIF, Person_NIS = @NIS, UpdatedAt = @Date, IsSynced = 0
-                    WHERE Id = @Id",
-                new { Id = editingPerson.Id, Name = editingPerson.Person_Name, Phone = editingPerson.Person_Phone,
-                      Adress = editingPerson.Person_Adress, Notes = editingPerson.Person_Notes, NRC = editingPerson.Person_NRC,
-                      NIF = editingPerson.Person_NIF, NIS = editingPerson.Person_NIS, Date = dateNow });
-            dbService.LogEvent($"✏️ تم تعديل بيانات الشخص: {editingPerson.Person_Name}");
+            if (isAddMode)
+            {
+                await connection.ExecuteAsync(@"INSERT INTO Persons (Id, Person_Name, Person_Phone, Person_Type, Person_Adress, Person_Notes, Person_NRC, Person_NIF, Person_NIS, Person_Debt, UpdatedAt, IsSynced, IsDeleted)
+                            VALUES (@Id, @Name, @Phone, @Type, @Adress, @Notes, @NRC, @NIF, @NIS, 0, @Date, 0, 0)",
+                    new { Id = Guid.NewGuid().ToString(), Name = editingPerson.Person_Name, Phone = editingPerson.Person_Phone, Type = editingPerson.Person_Type,
+                          Adress = editingPerson.Person_Adress, Notes = editingPerson.Person_Notes, NRC = editingPerson.Person_NRC,
+                          NIF = editingPerson.Person_NIF, NIS = editingPerson.Person_NIS, Date = dateNow });
+                dbService.LogEvent($"➕ تمت إضافة {(editingPerson.Person_Type == 2 ? "مورد" : "عميل")}: {editingPerson.Person_Name}");
+                toastService.ShowSuccessShort("تمت الإضافة بنجاح", "✅ إضافة");
+            }
+            else
+            {
+                await connection.ExecuteAsync(@"UPDATE Persons SET
+                            Person_Name = @Name, Person_Phone = @Phone, Person_Adress = @Adress, Person_Notes = @Notes,
+                            Person_NRC = @NRC, Person_NIF = @NIF, Person_NIS = @NIS, UpdatedAt = @Date, IsSynced = 0
+                        WHERE Id = @Id",
+                    new { Id = editingPerson.Id, Name = editingPerson.Person_Name, Phone = editingPerson.Person_Phone,
+                          Adress = editingPerson.Person_Adress, Notes = editingPerson.Person_Notes, NRC = editingPerson.Person_NRC,
+                          NIF = editingPerson.Person_NIF, NIS = editingPerson.Person_NIS, Date = dateNow });
+                dbService.LogEvent($"✏️ تم تعديل بيانات الشخص: {editingPerson.Person_Name}");
+                toastService.ShowSuccessShort("تم حفظ التعديل بنجاح", "✅ التعديل");
+            }
             showEditPersonModal = false;
             LoadPersons();
-            toastService.ShowSuccessShort("تم حفظ التعديل بنجاح", "✅ التعديل");
         }
         catch (Exception ex)
         {
