@@ -152,7 +152,7 @@ namespace BENPOSDZ.Services
                         _dbService.LogEvent("🖨️ WebView فارغ — تعذرت الطباعة على Android.", "WARN");
                         return;
                     }
-                    var printManager = (Android.Print.PrintManager)_activity.GetSystemService(Android.Content.Context.PrintService);
+                    var printManager = _activity.GetSystemService(Android.Content.Context.PrintService) as Android.Print.PrintManager;
                     if (printManager == null)
                     {
                         _dbService.LogEvent("🖨️ خدمة الطباعة غير متوفرة على هذا الجهاز.", "WARN");
