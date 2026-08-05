@@ -270,6 +270,15 @@
     .search-bar input { flex: 1; width: auto; padding: 15px; font-size: 18px; border: 2px solid #007bff; border-radius: 8px; box-sizing: border-box; }
     .btn-scan-cam { width: 54px; height: 54px; min-width: 54px; border: none; background: #6f42c1; color: white; border-radius: 8px; font-size: 24px; cursor: pointer; }
     .btn-scan-cam:active { transform: scale(0.95); }
+
+    @@media (max-width: 768px) {
+        .search-bar { gap: 8px; }
+        .search-bar input { min-width: 0; min-height: 48px; padding: 10px 12px; font-size: 16px; }
+        .btn-scan-cam { width: 48px; height: 48px; min-width: 48px; font-size: 22px; }
+        .pos-container { height: calc(100vh - 120px); gap: 12px; }
+        .pos-top-bar { flex-wrap: wrap; }
+        .customer-box { min-width: 0; }
+    }
     .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; }
     .product-card { background: white; padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
     .product-card:hover { background: #eef6ff; }
