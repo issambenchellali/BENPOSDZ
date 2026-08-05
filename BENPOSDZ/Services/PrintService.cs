@@ -118,11 +118,18 @@ namespace BENPOSDZ.Services
                 {
                     var webView = new Android.Webkit.WebView(activity)
                     {
-                        LayoutParameters = new Android.Views.ViewGroup.LayoutParams(1, 1)
+                        LayoutParameters = new Android.Views.ViewGroup.LayoutParams(
+                            Android.Views.ViewGroup.LayoutParams.MatchParent,
+                            Android.Views.ViewGroup.LayoutParams.MatchParent)
                     };
                     webView.Settings.JavaScriptEnabled = true;
                     webView.Settings.DomStorageEnabled = true;
+                    webView.Settings.BuiltInZoomControls = false;
+                    // إخفاء العرض حتى لا يظهر وميض فوق الشاشة أثناء التحضير
+                    webView.Visibility = Android.Views.ViewStates.Invisible;
                     webView.SetWebViewClient(new PrintWebViewClient(activity, _dbService));
+                    // ربط الـ WebView بنافذة النشاط حتى يكتمل الـ Layout وتنجح الطباعة على كل الأجهزة
+                    (activity.Window?.DecorView as Android.Views.ViewGroup)?.AddView(webView);
                     webView.LoadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
                 }
                 catch (Exception ex)
@@ -136,6 +143,8 @@ namespace BENPOSDZ.Services
         {
             private readonly Android.App.Activity _activity;
             private readonly DatabaseService _dbService;
+            private bool _printed;
+
             public PrintWebViewClient(Android.App.Activity activity, DatabaseService dbService)
             {
                 _activity = activity;
@@ -145,26 +154,54 @@ namespace BENPOSDZ.Services
             public override void OnPageFinished(Android.Webkit.WebView? view, string? url)
             {
                 base.OnPageFinished(view, url);
+                if (_printed || view == null) return;
+                _printed = true;
                 try
                 {
-                    if (view == null)
-                    {
-                        _dbService.LogEvent("🖨️ WebView فارغ — تعذرت الطباعة على Android.", "WARN");
-                        return;
-                    }
                     var printManager = _activity.GetSystemService(Android.Content.Context.PrintService) as Android.Print.PrintManager;
                     if (printManager == null)
                     {
                         _dbService.LogEvent("🖨️ خدمة الطباعة غير متوفرة على هذا الجهاز.", "WARN");
+                        RemoveWebView(view);
                         return;
                     }
                     var adapter = view.CreatePrintDocumentAdapter("BENPOSDZ");
                     printManager.Print("BENPOSDZ", adapter, new Android.Print.PrintAttributes.Builder().Build());
+                    _dbService.LogEvent("🖨️ تم إرسال المستند إلى حوار الطباعة (Android).");
                 }
                 catch (Exception ex)
                 {
                     _dbService.LogEvent($"❌ فشل إرسال المستند للطباعة على Android: {ex.Message}", "ERROR");
+                    RemoveWebView(view);
                 }
+            }
+
+            public override void OnReceivedError(Android.Webkit.WebView? view, Android.Webkit.IWebResourceRequest? request, Android.Webkit.WebResourceError? error)
+            {
+                base.OnReceivedError(view, request, error);
+                _dbService.LogEvent($"❌ خطأ في تحميل مستند الطباعة: {error?.ErrorCode} {error?.Description}", "ERROR");
+            }
+
+            // تنظيف العرض بعد فترة كافية حتى لا يتعارض مع مهمة الطباعة الجارية
+            private void RemoveWebView(Android.Webkit.WebView view)
+            {
+                try
+                {
+                    var mainLooper = Android.OS.Looper.MainLooper;
+                    if (mainLooper == null) return;
+                    var handler = new Android.OS.Handler(mainLooper);
+                    handler.PostDelayed(() =>
+                    {
+                        try
+                        {
+                            var parent = view.Parent as Android.Views.ViewGroup;
+                            parent?.RemoveView(view);
+                            view.Dispose();
+                        }
+                        catch { }
+                    }, 10000);
+                }
+                catch { }
             }
         }
 #endif

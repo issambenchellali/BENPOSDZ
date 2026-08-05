@@ -1866,11 +1866,14 @@ else if (currentTab == "update")
             if (!string.IsNullOrEmpty(path))
             {
                 lastBackupPath = path;
-                toastService.ShowSuccess("تم تصدير النسخة الاحتياطية بنجاح", "💾 نسخة احتياطية");
+                toastService.ShowSuccess("تم تصدير النسخة الاحتياطية بنجاح إلى:\n" + path, "💾 نسخة احتياطية");
             }
             else
             {
-                toastService.ShowWarning("لم يتم التصدير (إلغاء أو خطأ).", "💾 نسخة احتياطية");
+                string reason = string.IsNullOrEmpty(fileDialogService.LastError)
+                    ? "لم يتم التصدير (أُلغيت العملية)."
+                    : "تعذّر التصدير: " + fileDialogService.LastError;
+                toastService.ShowWarning(reason, "💾 نسخة احتياطية");
             }
         }
         catch (Exception ex)
@@ -1898,7 +1901,10 @@ else if (currentTab == "update")
             }
             else
             {
-                toastService.ShowWarning("لم تتم الاستعادة (إلغاء أو خطأ).", "ℹ️ استعادة");
+                string reason = string.IsNullOrEmpty(fileDialogService.LastError)
+                    ? "لم تتم الاستعادة (أُلغيت العملية)."
+                    : "تعذّرت الاستعادة: " + fileDialogService.LastError;
+                toastService.ShowWarning(reason, "ℹ️ استعادة");
             }
         }
         catch (Exception ex)

@@ -13,14 +13,23 @@ namespace BENPOSDZ.Services
 
         public FileDialogService(DatabaseService db) => _db = db;
 
+        // آخر خطأ حدث أثناء التصدير/الاستعادة (يعرضه الواجهة بدل رسالة عامة)
+        public string LastError { get; private set; } = "";
+
         // تصدير نسخة احتياطية: يفتح حوار الحفظ لاختيار الوجهة (USB، مجلد، ...)
         public async Task<string> ExportBackupAsync()
         {
+            LastError = "";
             try
             {
                 string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 string tempPath = Path.Combine(Path.GetTempPath(), $"benpos_export_{stamp}.db");
-                if (string.IsNullOrEmpty(_db.BackupDatabaseTo(tempPath))) return "";
+                string backupPath = _db.BackupDatabaseTo(tempPath);
+                if (string.IsNullOrEmpty(backupPath))
+                {
+                    LastError = "فشل إنشاء النسخة الاحتياطية من قاعدة البيانات (راجع السجل للتفاصيل).";
+                    return "";
+                }
                 byte[] bytes = await File.ReadAllBytesAsync(tempPath);
                 try { File.Delete(tempPath); } catch { }
 
@@ -31,11 +40,13 @@ namespace BENPOSDZ.Services
                     _db.LogEvent($"💾 تم تصدير النسخة الاحتياطية إلى: {result.FilePath}");
                     return result.FilePath;
                 }
-                _db.LogEvent($"❌ فشل تصدير النسخة الاحتياطية: {(result.Exception?.Message ?? "ألغى المستخدم الحفظ")}");
+                LastError = result.Exception?.Message ?? "ألغى المستخدم اختيار موقع الحفظ.";
+                _db.LogEvent($"❌ فشل تصدير النسخة الاحتياطية: {LastError}");
                 return "";
             }
             catch (Exception ex)
             {
+                LastError = ex.Message;
                 _db.LogEvent($"❌ فشل تصدير النسخة الاحتياطية: {ex.Message}");
                 return "";
             }
@@ -44,6 +55,7 @@ namespace BENPOSDZ.Services
         // استعادة قاعدة البيانات من ملف نسخة احتياطية يختاره المستخدم
         public async Task<string> RestoreBackupAsync()
         {
+            LastError = "";
             try
             {
                 var pickResult = await FilePicker.Default.PickAsync(new PickOptions
@@ -55,7 +67,11 @@ namespace BENPOSDZ.Services
                         { DevicePlatform.Android, new[] { "application/octet-stream", "application/x-sqlite3", "*/*" } },
                     })
                 });
-                if (pickResult == null) return ""; // المستخدم ألغى الاختيار
+                if (pickResult == null)
+                {
+                    LastError = "ألغى المستخدم اختيار الملف.";
+                    return "";
+                }
 
                 // نسخ الملف المختار إلى ملف مؤقت ثم الاستعادة عبر SQLite Backup API
                 string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -66,10 +82,13 @@ namespace BENPOSDZ.Services
 
                 string restored = _db.RestoreDatabaseFromFile(tempPath);
                 try { File.Delete(tempPath); } catch { }
+                if (string.IsNullOrEmpty(restored))
+                    LastError = "فشل استعادة قاعدة البيانات من الملف (راجع السجل للتفاصيل).";
                 return restored;
             }
             catch (Exception ex)
             {
+                LastError = ex.Message;
                 _db.LogEvent($"❌ فشل الاستعادة من الملف: {ex.Message}");
                 return "";
             }
