@@ -162,17 +162,17 @@
             </div>
         }
 
-        <!-- الدخول بكود التفعيل (6 أرقام) -->
+        <!-- الدخول بالكود اليومي (6 أرقام) -->
         <div class="activation-login">
             <button class="btn-code-login" @onclick="() => showCodeLogin = !showCodeLogin">
-                🔑 @(showCodeLogin ? "إخفاء الدخول بالكود" : "فتح البرنامج بكود التفعيل")
+                🔑 @(showCodeLogin ? "إخفاء الدخول بالكود اليومي" : "فتح البرنامج بالكود اليومي")
             </button>
             @if (showCodeLogin)
             {
                 <div class="code-login-box">
-                    <p class="code-login-hint">أدخل كود التفعيل المكوّن من 6 أرقام الخاص بهذا الجهاز للدخول مباشرة بحساب المدير.</p>
+                    <p class="code-login-hint">أدخل الكود اليومي (6 أرقام) الذي يوفره المالك. نفس الكود على جميع الأجهزة ويتغير يومياً — لا علاقة له بكود التفعيل.</p>
                     <div class="code-login-row">
-                        <input type="text" @bind="activationCode" maxlength="6" inputmode="numeric" placeholder="6 أرقام" class="code-input" />
+                        <input type="text" @bind="dailyCode" maxlength="6" inputmode="numeric" placeholder="6 أرقام" class="code-input" />
                         <button class="btn-login" style="width:auto; padding:10px 22px; font-size:15px;" @onclick="LoginWithCode">دخول</button>
                     </div>
                     @if (codeError != null)
@@ -307,7 +307,7 @@
     private bool drawerOpen = false;
 
     private bool showCodeLogin = false;
-    private string activationCode = "";
+    private string dailyCode = "";
     private string? codeError;
 
     private bool showForceChange = false;
@@ -332,11 +332,11 @@
     // تبديل وضع قاعدة البيانات عبر المفتاح المنزلق (Local ↔ LAN)
     private void ToggleDbMode() => ChangeDbMode(dbMode == "Local" ? "LAN" : "Local");
 
-    // تسجيل الدخول بكود التفعيل (6 أرقام) — دخول مباشر بحساب المدير بدون اسم مستخدم وكلمة مرور
+    // تسجيل الدخول بالكود اليومي (6 أرقام) — دخول بحساب المدير بدون اسم مستخدم وكلمة مرور
     private void LoginWithCode()
     {
         codeError = null;
-        var (success, error) = authService.TryLoginWithActivationCode(dbService, activationCode);
+        var (success, error) = authService.TryLoginWithDailyCode(dbService, dailyCode);
         if (!success)
         {
             codeError = error;

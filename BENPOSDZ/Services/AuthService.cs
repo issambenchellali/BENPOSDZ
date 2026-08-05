@@ -197,15 +197,30 @@ namespace BENPOSDZ.Services
             return (true, null, newExp);
         }
 
-        // تسجيل الدخول بكود التفعيل (6 أرقام): يُفعّل البرنامج ويدخل بحساب المدير مباشرة
-        public (bool Success, string? Error) TryLoginWithActivationCode(DatabaseService dbService, string enteredCode)
+        // كود الدخول اليومي (6 أرقام): مرتبط بالتاريخ فقط — نفس الكود على كل الأجهزة، صالح عدة مرات في نفس اليوم.
+        // مختلف تماماً عن كود التفعيل (الذي يرتبط بالجهاز + الساعة + استخدام واحد).
+        private const string DailyCodeSalt = "BENPOS_DZ_DAILY_2024_DEV_KEY";
+
+        public string GetDailyLoginCode()
+        {
+            string raw = DateTime.Now.ToString("yyyy-MM-dd") + DailyCodeSalt;
+            using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
+                int val = BitConverter.ToInt32(bytes, 0);
+                return (Math.Abs(val) % 1000000).ToString("D6");
+            }
+        }
+
+        // تسجيل الدخول بالكود اليومي (6 أرقام): لا يُفعّل البرنامج، فقط يدخل بحساب المدير
+        public (bool Success, string? Error) TryLoginWithDailyCode(DatabaseService dbService, string enteredCode)
         {
             enteredCode = (enteredCode ?? "").Trim();
             if (enteredCode.Length != 6 || !enteredCode.All(char.IsDigit))
-                return (false, "أدخل كود التفعيل المكوّن من 6 أرقام.");
+                return (false, "أدخل الكود اليومي المكوّن من 6 أرقام.");
 
-            if (!ValidateActivationCode(dbService, GetMachineId(), enteredCode))
-                return (false, "كود التفعيل غير صحيح. تأكد من الرقم الموجود في شاشة التفعيل (الإعدادات ▸ التفعيل).");
+            if (enteredCode != GetDailyLoginCode())
+                return (false, "الكود اليومي غير صحيح أو انتهت صلاحيته. اطلب كود اليوم الحالي من المالك.");
 
             using var connection = dbService.CreateConnection();
             var admin = connection.QueryFirstOrDefault<UserModel>("SELECT * FROM Users WHERE User_Name = 'admin' AND IsDeleted = 0");
@@ -213,9 +228,7 @@ namespace BENPOSDZ.Services
                 return (false, "لم يتم العثور على حساب المدير في قاعدة البيانات.");
 
             Login(admin);
-            IsLicensed = true;
-            IsTrialExpired = false;
-            dbService.LogEvent("🔑 تم تسجيل الدخول بكود التفعيل.");
+            dbService.LogEvent("🔑 تم تسجيل الدخول بالكود اليومي.");
             return (true, null);
         }
 
