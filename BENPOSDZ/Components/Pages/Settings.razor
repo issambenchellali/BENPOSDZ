@@ -24,15 +24,21 @@
 
 <div class="tabs">
     <button class="tab-btn @(currentTab == "store" ? "active" : "")" @onclick='() => SwitchTab("store")'>🏪 المتجر</button>
-    <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
-    <button class="tab-btn @(currentTab == "print" ? "active" : "")" @onclick='() => SwitchTab("print")'>🖨️ الطباعة</button>
-    <button class="tab-btn @(currentTab == "barcode" ? "active" : "")" @onclick='() => SwitchTab("barcode")'>🏷️ الباركود</button>
-    <button class="tab-btn @(currentTab == "conn" ? "active" : "")" @onclick='() => SwitchTab("conn")'>🌐 الاتصال</button>
-    <button class="tab-btn @(currentTab == "backup" ? "active" : "")" @onclick='() => SwitchTab("backup")'>💾 النسخ الاحتياطي</button>
-    <button class="tab-btn @(currentTab == "transfer" ? "active" : "")" @onclick='() => SwitchTab("transfer")'>🔄 نقل البيانات</button>
-    <button class="tab-btn @(currentTab == "log" ? "active" : "")" @onclick='() => SwitchTab("log")'>📊 السجل</button>
+    @if (ShowAdvancedTabs)
+    {
+        <button class="tab-btn @(currentTab == "types" ? "active" : "")" @onclick='() => SwitchTab("types")'>📦 الأنواع</button>
+        <button class="tab-btn @(currentTab == "print" ? "active" : "")" @onclick='() => SwitchTab("print")'>🖨️ الطباعة</button>
+        <button class="tab-btn @(currentTab == "barcode" ? "active" : "")" @onclick='() => SwitchTab("barcode")'>🏷️ الباركود</button>
+        <button class="tab-btn @(currentTab == "conn" ? "active" : "")" @onclick='() => SwitchTab("conn")'>🌐 الاتصال</button>
+        <button class="tab-btn @(currentTab == "backup" ? "active" : "")" @onclick='() => SwitchTab("backup")'>💾 النسخ الاحتياطي</button>
+        <button class="tab-btn @(currentTab == "transfer" ? "active" : "")" @onclick='() => SwitchTab("transfer")'>🔄 نقل البيانات</button>
+        <button class="tab-btn @(currentTab == "log" ? "active" : "")" @onclick='() => SwitchTab("log")'>📊 السجل</button>
+    }
     <button class="tab-btn @(currentTab == "lic" ? "active" : "")" @onclick='() => SwitchTab("lic")'>🔑 التفعيل</button>
-    <button class="tab-btn @(currentTab == "update" ? "active" : "")" @onclick='() => SwitchTab("update")'>🔁 التحديثات</button>
+    @if (ShowAdvancedTabs)
+    {
+        <button class="tab-btn @(currentTab == "update" ? "active" : "")" @onclick='() => SwitchTab("update")'>🔁 التحديثات</button>
+    }
 </div>
 
 @if (currentTab == "store")
@@ -637,7 +643,10 @@ else if (currentTab == "lic")
 
         <hr style="margin: 30px 0;" />
         <h4>تحديث البرنامج</h4>
-        <button class="btn-save" style="background: #17a2b8;" @onclick='() => SwitchTab("update")'>🔄 الانتقال لإعدادات التحديثات</button>
+        @if (ShowAdvancedTabs)
+        {
+            <button class="btn-save" style="background: #17a2b8;" @onclick='() => SwitchTab("update")'>🔄 الانتقال لإعدادات التحديثات</button>
+        }
     </div>
 }
 else if (currentTab == "update")
@@ -1114,6 +1123,8 @@ else if (currentTab == "update")
     protected override async Task OnInitializedAsync()
     {
         if (!authService.IsAdmin) { Nav.NavigateTo("/pos"); return; }
+        // الأقسام المتقدمة تظهر فقط بعد تفعيل البرنامج
+        if (!authService.IsLicensed) currentTab = "lic";
         appState.OnProductTypesChanged += HandleProductTypesChanged;
         await LoadSettings();
         await LoadProductTypes();
@@ -1186,6 +1197,12 @@ else if (currentTab == "update")
 
     private void SwitchTab(string tab)
     {
+        // حماية: الأقسام المتقدمة مقفلة قبل التفعيل
+        if (!ShowAdvancedTabs && tab != "store" && tab != "lic")
+        {
+            toastService.ShowWarning("هذه الإعدادات تتطلب تفعيل البرنامج. يُرجى التفعيل أولاً من قسم «التمكين».", "🔒 البرنامج غير مفعل");
+            return;
+        }
         currentTab = tab;
         if (tab == "print" && currentLayout.Sections.Count == 0)
         {
@@ -1197,6 +1214,8 @@ else if (currentTab == "update")
             RefreshBarcodePreview();
         }
     }
+
+    private bool ShowAdvancedTabs => authService.IsLicensed;
 
     private async Task LoadSettings()
     {
