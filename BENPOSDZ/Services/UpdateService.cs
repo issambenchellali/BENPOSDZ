@@ -49,12 +49,22 @@ namespace BENPOSDZ.Services
             _db = db;
         }
 
-        // الإصدار الحالي المدمج في البرنامج (من csproj ApplicationDisplayVersion)
+        // الإصدار الحالي المدمج في البرنامج (من csproj ApplicationDisplayVersion).
+        // على ويندوز يعرض AppInfo الإصدار كـ major.minor.build.revision (مثلاً 1.1.5.0)
+        // فنُسقّطه إلى 3 مكونات لكي يطابق نسخة أندرويد (versionName) والنسخة المنشورة.
         public string CurrentVersionString
         {
             get
             {
-                try { return Microsoft.Maui.ApplicationModel.AppInfo.Current.VersionString; }
+                try
+                {
+                    var raw = Microsoft.Maui.ApplicationModel.AppInfo.Current.VersionString;
+                    if (Version.TryParse(raw, out var v))
+                    {
+                        return v.Build >= 0 ? $"{v.Major}.{v.Minor}.{v.Build}" : $"{v.Major}.{v.Minor}";
+                    }
+                    return raw;
+                }
                 catch { return "1.0"; }
             }
         }
