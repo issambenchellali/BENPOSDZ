@@ -124,7 +124,15 @@ static bool CanWrite(string dir)
 static void ClearDirectory(string dir, Logger logger)
 {
     foreach (var d in Directory.GetDirectories(dir))
+    {
+        // مجلد قاعدة البيانات المحلية (Database) يُحفظ أثناء التحديث — لا نمسح بيانات الزبون أبداً.
+        if (string.Equals(Path.GetFileName(d), "Database", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.Log("تخطّي مجلد قاعدة البيانات أثناء التحديث: " + d);
+            continue;
+        }
         Directory.Delete(d, true);
+    }
     foreach (var f in Directory.GetFiles(dir))
         File.Delete(f);
 }

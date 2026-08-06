@@ -139,6 +139,17 @@ jobs:
           }
 
       - name: رفع APK إلى GitHub Release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $src = "BENPOSDZ/bin/Release/net8.0-android/dz.benpos.pos-Signed.apk"
+          if (-not (Test-Path $src)) {
+            $src = "BENPOSDZ/bin/Release/net8.0-android/dz.benpos.pos.apk"
+          }
+          Copy-Item $src "release/BENPOSDZ_${{ steps.version.outputs.version }}.apk" -Force
+          Write-Host "APK uploaded as: release/BENPOSDZ_${{ steps.version.outputs.version }}.apk"
+
+      - name: رفع APK إلى GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: BENPOSDZ/bin/Release/net8.0-android/dz.benpos.pos-Signed.apk
+          files: release/BENPOSDZ_${{ steps.version.outputs.version }}.apk

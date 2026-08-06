@@ -66,8 +66,11 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(
 Type: filesandordirs; Name: "{app}\*.pdb"
 
 [Code]
-// Keep user data (SQLite DB in AppData) intact during uninstall/upgrade.
+// Keep user data (SQLite DB in the "Database" folder next to the exe, or in
+// LocalAppData\BENPOSDZ\Database when the app folder is read-only) intact
+// during uninstall/upgrade. The installer never touches these folders.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  // Nothing to do: data lives in AppData which the installer never touches.
+  // Nothing to do: the Database folder is created by the app at runtime and is
+  // never listed in [Files], so Inno Setup leaves it untouched on uninstall.
 end;

@@ -23,16 +23,74 @@ namespace BENPOSDZ.Services
 
         public DatabaseService()
         {
-            string folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BENPOSDZ");
+            string folderPath = ResolveDatabaseDirectory();
             if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
             
             _sqliteDbPath = Path.Combine(folderPath, "StockDB.db");
             _sqliteConnectionString = $"Data Source={_sqliteDbPath}";
             _logFilePath = Path.Combine(folderPath, "System.log");
 
+            // إن لم تكن القاعدة موجودة تُنشأ تلقائياً (InitializeSQLiteSettings/InitializeSystem أدناه).
+            // إن كانت قاعدة قديمة موجودة في موقع سابق، تُرحَّل إلى الموقع الجديد حتى لا تُفقد البيانات.
+            MigrateLegacyDatabase();
             InitializeSQLiteSettings();
             LoadConnectionSettings();
             InitializeSystem();
+        }
+
+        // موقع قاعدة البيانات المعروف والمُوحَّد:
+        //   - ويندوز: مجلد Database بجانب ملف التشغيل BENPOSDZ.exe إن كان قابلاً للكتابة (مناسب للتثبيت المحمول)،
+        //     وإلا في LocalAppData\BENPOSDZ\Database (عند التثبيت في Program Files المحمي).
+        //   - أندرويد: داخل صندوق التطبيق (Database).
+        // تبقى القاعدة دائماً في مجلد Database واضح يسهل العثور عليه وإصلاحه ونسخه احتياطياً.
+        private static string ResolveDatabaseDirectory()
+        {
+#if ANDROID
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Database");
+#else
+            string exeDir = AppContext.BaseDirectory;
+            if (!string.IsNullOrWhiteSpace(exeDir))
+            {
+                string portable = Path.Combine(exeDir, "Database");
+                if (IsDirectoryWritable(portable))
+                    return portable;
+            }
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BENPOSDZ", "Database");
+#endif
+        }
+
+        private static bool IsDirectoryWritable(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string probe = Path.Combine(dir, ".write_probe");
+                File.WriteAllText(probe, "probe");
+                File.Delete(probe);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // ترحيل قاعدة البيانات من موقع الإصدارات السابقة (LocalAppData\BENPOSDZ\StockDB.db)
+        // إلى الموقع الجديد عند أول تشغيل بعد الترقية — فقط إن لم توجد قاعدة في الموقع الجديد بعد.
+        private void MigrateLegacyDatabase()
+        {
+            try
+            {
+                string legacyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BENPOSDZ");
+                string legacyDb = Path.Combine(legacyDir, "StockDB.db");
+                if (!File.Exists(_sqliteDbPath) && File.Exists(legacyDb))
+                {
+                    string dbDir = Path.GetDirectoryName(_sqliteDbPath) ?? legacyDir;
+                    if (!Directory.Exists(dbDir)) Directory.CreateDirectory(dbDir);
+                    File.Copy(legacyDb, _sqliteDbPath, overwrite: false);
+                    string legacyLog = Path.Combine(legacyDir, "System.log");
+                    if (File.Exists(legacyLog) && !File.Exists(_logFilePath))
+                        File.Copy(legacyLog, _logFilePath, overwrite: false);
+                }
+            }
+            catch { }
         }
 
         // سجل الأحداث المطوَّر: يكتب كل الأحداث في ملف System.log ويحتفظ بأحدث 300 سطر في الذاكرة

@@ -607,14 +607,19 @@ else if (currentTab == "log")
 {
     <div class="settings-card">
         <h3>سجل النظام (System Log)</h3>
-        <p style="color:#666; font-size:13px;">سجل العمليات والأخطاء الخلفية — يُحفظ في ملف System.log داخل مجلد البرنامج.</p>
+        <p style="color:#666; font-size:13px;">سجل العمليات والأخطاء الخلفية — يُحفظ في ملف System.log داخل مجلد قاعدة البيانات.</p>
+        <div class="form-group">
+            <label>موقع قاعدة البيانات (SQLite):</label>
+            <input type="text" value="@databasePath" readonly style="background:#f8fafc; direction:ltr; text-align:left;" />
+            <small style="color:#666;">يُنشأ مجلد Database تلقائياً بجانب البرنامج عند أول تشغيل — القاعدة تُنشأ ذاتياً إن لم تكن موجودة. من السهل العثور عليها ونسخها احتياطياً من هذا المسار.</small>
+        </div>
         <p style="font-size:13px;">
             ⚡ أداء الاستعلامات: <strong>@QueryProfiler.SlowQueryCount</strong> استعلام بطيء (+400ms) في هذه الجلسة —
             الاستعلامات البطيئة تُسجل أدناه برسالة ⚠️ (تُستخدم لفحص أداء وضع LAN على MySQL).
         </p>
         <div class="log-actions">
             <button class="btn-save" style="background:#17a2b8; margin-top:0;" @onclick="RefreshLog">🔄 تحديث</button>
-            <button class="btn-save" style="background:#6c757d; margin-top:0;" @onclick="dbService.OpenLogFolder">📂 فتح مجلد السجلات</button>
+            <button class="btn-save" style="background:#6c757d; margin-top:0;" @onclick="dbService.OpenLogFolder">📂 فتح مجلد قاعدة البيانات</button>
             <button class="btn-save" style="background:#dc3545; margin-top:0;" @onclick="ClearSystemLog">🗑️ مسح السجل</button>
         </div>
         <div class="form-group">
@@ -952,6 +957,7 @@ else if (currentTab == "update")
 
     private string currentAppVersion = "";
     private string appDirectory = "";
+    private string databasePath = "";
     private string updateRepoUrl = "";
     private bool updateCheckOnStart = false;
     private bool updateCheckPeriodic = true;
@@ -1247,6 +1253,7 @@ else if (currentTab == "update")
     {
         currentAppVersion = updateService.CurrentVersionString;
         appDirectory = AppContext.BaseDirectory;
+        databasePath = dbService.DatabaseFilePath;
         updateRepoUrl = updateService.RepoUrl;
         updateCheckOnStart = updateService.CheckOnStart;
         updateCheckPeriodic = updateService.CheckPeriodic;
