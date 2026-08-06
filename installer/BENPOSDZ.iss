@@ -50,7 +50,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; Excludes: "*.pdb,BENPOSUpdater.exe"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#SourceDir}\*"; Excludes: "*.pdb,BENPOSUpdater.exe,BENPOSDZ.exe.WebView2\EBWebView"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 #ifexist SourceDir + "\\BENPOSUpdater.exe"
 Source: "{#SourceDir}\BENPOSUpdater.exe"; DestDir: "{app}"; Flags: ignoreversion
 #endif

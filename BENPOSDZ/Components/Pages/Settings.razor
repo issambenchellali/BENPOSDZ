@@ -732,6 +732,15 @@ else if (currentTab == "update")
     <div class="settings-card" style="max-width: 700px;">
         <h3>🔁 التحديثات</h3>
         <p class="print-hint">الإصدار الحالي: <strong>@currentAppVersion</strong></p>
+        @if (OperatingSystem.IsWindows())
+        {
+            <div class="form-group">
+                <label>مكان تشغيل البرنامج (مجلد التثبيت)</label>
+                <input type="text" value="@appDirectory" readonly style="background:#f8fafc; direction:ltr; text-align:left;" />
+                <small style="color:#666;">المسار الذي يُشغَّل منه الملف الحالي BENPOSDZ.exe</small>
+            </div>
+            <button class="btn-save" style="background:#6c757d; margin-top:6px;" @onclick="OpenAppDirectory">📂 فتح مجلد البرنامج</button>
+        }
 
         <div class="form-group">
             <label>رابط مستودع GitHub للتحديثات</label>
@@ -942,6 +951,7 @@ else if (currentTab == "update")
     private bool wipeResetStock = false;
 
     private string currentAppVersion = "";
+    private string appDirectory = "";
     private string updateRepoUrl = "";
     private bool updateCheckOnStart = false;
     private bool updateCheckPeriodic = true;
@@ -1236,12 +1246,25 @@ else if (currentTab == "update")
     private void LoadUpdateSettings()
     {
         currentAppVersion = updateService.CurrentVersionString;
+        appDirectory = AppContext.BaseDirectory;
         updateRepoUrl = updateService.RepoUrl;
         updateCheckOnStart = updateService.CheckOnStart;
         updateCheckPeriodic = updateService.CheckPeriodic;
         updateAutoDownload = updateService.AutoDownload;
         var last = updateService.LastUpdateCheckUtc;
         updateLastCheck = last > DateTime.MinValue ? last.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : null;
+    }
+
+    private void OpenAppDirectory()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{appDirectory}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            toastService.ShowError("تعذّر فتح المجلد: " + ex.Message, "❌ مجلد البرنامج");
+        }
     }
 
     private void SaveUpdateSettings()

@@ -11,6 +11,7 @@
 @inject IApplicationStateService appState
 @inject IJSRuntime JS
 @inject NetworkScanner scanner
+@inject UpdateService updateService
 
 <div class="login-container">
     <!-- زر الهامبورغر: يفتح درج إعدادات الاتصال (أعلى يسار الشاشة) -->
@@ -89,6 +90,55 @@
             </div>
         </details>
 
+        @if (OperatingSystem.IsWindows())
+        {
+            <details class="cloud-conn">
+                <summary>🔁 التحديثات</summary>
+                <div class="cloud-conn-body">
+                    <div class="form-group">
+                        <label>الإصدار الحالي</label>
+                        <input type="text" value="@currentVersion" readonly />
+                    </div>
+                    <div class="form-group">
+                        <label>رابط مستودع GitHub للتحديثات</label>
+                        <input type="text" @bind="updRepoUrl" placeholder="https://github.com/owner/repo" />
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="drawer-check" @bind="updCheckOnStart" /> الفحص التلقائي عند إقلاع البرنامج</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="drawer-check" @bind="updCheckPeriodic" /> فحص دوري كل 24 ساعة أثناء التشغيل</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="drawer-check" @bind="updAutoDownload" /> تنزيل التحديث تلقائياً عند توفره</label>
+                    </div>
+                    <button type="button" class="btn-discover" style="margin-bottom:6px;" @onclick="SaveUpdateSettingsLogin">💾 حفظ إعدادات التحديث</button>
+                    <button type="button" class="btn-discover" style="background:#0d9488;" @onclick="CheckForUpdatesLogin" disabled="@updBusy">
+                        @(updBusy ? "جارٍ الفحص..." : "🔄 التحقق من التحديثات الآن")
+                    </button>
+
+                    @if (updateService.PendingUpdate != null)
+                    {
+                        <div style="margin-top:8px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:6px; padding:8px; font-size:12px; text-align:center;">
+                            <strong>✅ تحديث متوفر: v@(updateService.PendingUpdate.version)</strong>
+                            <button type="button" class="btn-discover" style="background:#059669; margin-top:6px;" @onclick="StartUpdateDownloadLogin" disabled="@updDownloading">📥 تنزيل وتحديث الآن</button>
+                        </div>
+                    }
+                    @if (updStatus != null)
+                    {
+                        <div class="discovery-msg" style="color:#0d9488;">@updStatus</div>
+                    }
+                    @if (updDownloading)
+                    {
+                        <div style="margin-top:8px;">
+                            <div class="progress"><div class="progress-bar" style="width:@(updPct)%;"></div></div>
+                            <small class="scan-hint">@updDownloadStatus</small>
+                        </div>
+                    }
+                </div>
+            </details>
+        }
+
         <div class="conn-actions">
             <button type="button" class="btn-save-conn" @onclick="SaveConnSettings">💾 حفظ الإعدادات</button>
         </div>
@@ -105,6 +155,7 @@
         <div class="login-header">
             <h1>BENPOS</h1>
             <p>نظام إدارة المبيعات</p>
+            <div class="login-version">الإصدار <strong>@currentVersion</strong></div>
             <div class="login-license-status @(authService.IsLicensed ? "ok" : "no")">
                 @if (authService.IsLicensed)
                 {
@@ -222,6 +273,10 @@
     .login-license-status { margin-top: 6px; font-size: 13px; font-weight: bold; padding: 6px 10px; border-radius: 8px; }
     .login-license-status.ok { color: #15803d; background: #dcfce7; }
     .login-license-status.no { color: #b91c1c; background: #fee2e2; }
+    .login-version { font-size: 12px; color: #64748b; margin: 0 0 4px; }
+    .login-drawer input[type=checkbox].drawer-check { width: auto; margin-left: 6px; }
+    .progress { background: #e2e8f0; border-radius: 6px; height: 8px; overflow: hidden; }
+    .progress-bar { background: #0d9488; height: 100%; transition: width 0.2s; }
 
     .login-body { display: flex; text-align: right; border-top: 1px solid #eef1f4; }
 
@@ -343,6 +398,17 @@
     private bool discovering = false;
     private ScanProgress scanProgress = new ScanProgress();
     private string? discoveryMsg;
+
+    private string currentVersion = "";
+    private string updRepoUrl = "";
+    private bool updCheckOnStart = false;
+    private bool updCheckPeriodic = true;
+    private bool updAutoDownload = false;
+    private bool updBusy = false;
+    private string? updStatus;
+    private bool updDownloading = false;
+    private double updPct = 0;
+    private string updDownloadStatus = "";
 
     private void ToggleDrawer() => drawerOpen = !drawerOpen;
     private void CloseDrawer() => drawerOpen = false;
@@ -492,8 +558,89 @@
         using var connection = dbService.CreateLocalConnection();
         dbMode = connection.QueryFirstOrDefault<string>("SELECT `Value` FROM AppSettings WHERE `Key` = 'DBMode'") ?? "Local";
         LoadConnSettings();
+        LoadUpdateSettingsLogin();
         // مزامنة حالة الاتصال الفعلية (كانت تعرض "SQLite" بشكل خاطئ حتى في وضع LAN)
         appState.SetConnectionStatus(dbService.ConnectionStatus);
+    }
+
+    private void LoadUpdateSettingsLogin()
+    {
+        try
+        {
+            currentVersion = updateService.CurrentVersionString;
+            updRepoUrl = updateService.RepoUrl;
+            updCheckOnStart = updateService.CheckOnStart;
+            updCheckPeriodic = updateService.CheckPeriodic;
+            updAutoDownload = updateService.AutoDownload;
+        }
+        catch { }
+    }
+
+    private void SaveUpdateSettingsLogin()
+    {
+        try
+        {
+            using var connection = dbService.CreateLocalConnection();
+            void Set(string key, string val)
+            {
+                var ra = connection.Execute("UPDATE AppSettings SET `Value` = @V WHERE `Key` = @K", new { V = val, K = key });
+                if (ra == 0) connection.Execute("INSERT INTO AppSettings (`Key`, `Value`) VALUES (@K, @V)", new { V = val, K = key });
+            }
+            Set(UpdateService.K_UpdateRepoUrl, updRepoUrl?.Trim() ?? "");
+            Set(UpdateService.K_UpdateCheckOnStart, updCheckOnStart ? "true" : "false");
+            Set(UpdateService.K_UpdateCheckPeriodic, updCheckPeriodic ? "true" : "false");
+            Set(UpdateService.K_UpdateAutoDownload, updAutoDownload ? "true" : "false");
+            updStatus = "✅ تم حفظ إعدادات التحديث";
+        }
+        catch (Exception ex)
+        {
+            updStatus = "❌ فشل الحفظ: " + ex.Message;
+        }
+    }
+
+    private async Task CheckForUpdatesLogin()
+    {
+        if (updateService.IsBusy) return;
+        updBusy = true;
+        updStatus = null;
+        try
+        {
+            bool has = await updateService.CheckForUpdateAsync();
+            LoadUpdateSettingsLogin();
+            updStatus = has ? $"✅ تحديث متوفر: v{updateService.PendingUpdate?.version}" : "✅ أنت تستخدم أحدث إصدار";
+        }
+        catch (Exception ex)
+        {
+            updStatus = "❌ تعذّر الفحص: " + ex.Message;
+        }
+        finally { updBusy = false; }
+    }
+
+    private async Task StartUpdateDownloadLogin()
+    {
+        if (updateService.PendingUpdate == null) return;
+        updDownloading = true;
+        updStatus = null;
+        try
+        {
+            var progress = new Progress<(long Done, long Total)>(p =>
+            {
+                updPct = p.Total > 0 ? Math.Round(100.0 * p.Done / p.Total, 0) : 0;
+                updDownloadStatus = $"جارٍ التنزيل... {p.Done / 1024.0 / 1024.0:0.0} / {p.Total / 1024.0 / 1024.0:0.0} MB";
+                InvokeAsync(StateHasChanged);
+            });
+            await updateService.DownloadAndInstallAsync(updateService.PendingUpdate, progress);
+            updDownloadStatus = "تم التحضير. جارٍ الإغلاق والتثبيت...";
+            await Task.Delay(1000);
+            try { Application.Current?.Quit(); } catch { }
+            Environment.Exit(0);
+        }
+        catch (Exception ex)
+        {
+            updDownloading = false;
+            updDownloadStatus = "";
+            updStatus = "❌ فشل التحديث: " + ex.Message;
+        }
     }
 
     private void LoadConnSettings()

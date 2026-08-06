@@ -49,7 +49,11 @@ Copy-Item (Join-Path $tmp "updater\BENPOSUpdater.exe") $pub -Force
 Write-Host "3/4 تجميع الحزمة..." -ForegroundColor Cyan
 $pkg = Join-Path $tmp "package"
 New-Item -ItemType Directory -Force -Path $pkg | Out-Null
-Copy-Item (Join-Path $pub "*") $pkg -Recurse -Force
+# نسخ كل شيء باستثناء ذاكرة WebView2 المؤقتة (يُعاد إنشاؤها تلقائياً عند الإقلاع)
+Get-ChildItem (Join-Path $pub "*") | ForEach-Object {
+    if ($_.Name -eq "BENPOSDZ.exe.WebView2") { Write-Host "  (تجاوز ذاكرة WebView2 المؤقتة: $($_.Name))" -ForegroundColor DarkGray }
+    else { Copy-Item $_.FullName $pkg -Recurse -Force }
+}
 Copy-Item (Join-Path $tmp "updater\BENPOSUpdater.exe") $pkg -Force
 Get-ChildItem $pkg -Filter *.pdb | Remove-Item -Force
 
